@@ -31,6 +31,8 @@ export class Unit extends Entity {
     this.anim = Math.random() * 6.28;
     this.moving = 0;                   // 0..1 speed factor this frame
     this.spawnTimer = 0.4;             // grace after emerging from factory
+    this.homing = 0;                   // air: auto-mission toward enemy front
+    this.life = 0;                     // air: total flight time (sec)
     this.applyUpgrades();
   }
   applyUpgrades() { /* engine re-applies after tier changes */ }
@@ -144,6 +146,37 @@ export class Unit extends Entity {
     // --- targeting ---
     if (this.cooldown > 0) this.cooldown -= dt;
     this.repath -= dt;
+    // --- air auto-mission: a plane with no order flies to the nearest enemy
+    // ground target and attacks it, then lands after a flight window. Without
+    // this a freshly built aircraft just hovers at the airfield "doing nothing"
+    // (and can drift off-map, which looked like a freeze).
+    if (this.isAir() && !this.landed) {
+      if (this.spawnTimer <= 0) this.life += dt;
+      if (!this.target && (!this.moveOrder || !this.attackMove)) {
+        // pick the closest enemy building/unit to strike
+        let best = null, bd = Infinity;
+        const all = [...game.units, ...game.buildings];
+        for (const e of all) {
+          if (e === this || e.fac === this.fac || e.dead || !e.isAlive()) continue;
+          const ec = e.center ? e.center() : e;
+          const d2 = (ec.x - this.x) ** 2 + (ec.y - this.y) ** 2;
+          if (d2 < bd) { bd = d2; best = e; }
+        }
+        if (best && this.life < TUNE.airMissionTime) {
+          const ec = best.center ? best.center() : best;
+          this.fx = Math.floor(ec.x / TILE); this.fy = Math.floor(ec.y / TILE);
+          this.moveOrder = { x: ec.x, y: ec.y };
+          this.attackMove = true;
+          this.homing = 1;
+        } else if (this.life >= TUNE.airMissionTime) {
+          // land: drop out of the air. Plane becomes a static ground unit —
+          // it stays alive, can be re-ordered, and no longer "flying".
+          this.homing = 0; this.attackMove = false; this.moveOrder = null;
+          this.landed = true; this.speed = 0;
+          this.fx = Math.floor(this.x / TILE); this.fy = Math.floor(this.y / TILE);
+        }
+      }
+    }
     const vrange = this.rangePx() * 1.5;
     // acquire: attack-move (chase), idle hunting (hold fire), or re-acquire a lost lock
     if (!this.target) {

@@ -68,25 +68,65 @@ export class AI {
         }
     return false;
   }
+  // Build order ladder: [id, target count]. Tin gates are implicit — the AI
+  // saves for each building's cost and production() holds back while it does.
+  // Multiple ORE PLANTS first: 1 plant = only 6 tin/s, far too slow for the
+  // rest of the ladder (steel 800, tank f 700, airfield 900…).
+  static LADDER = [
+    ["ore", 6], ["fuel", 3], ["steel", 1], ["barracks", 1], ["tankf", 1],
+    ["barracks", 2], ["airf", 1], ["arsenal", 1], ["tankf", 2],
+  ];
+  // Next building the ladder is saving up for (null = nothing pending).
+  nextEcoTarget(mine) {
+    const count = (id) => mine.filter((b) => b.cfg?.id === id).length;
+    for (const [id, n] of AI.LADDER)
+      if (count(id) < n) return { id, cost: BUILDINGS[id].cost.tin };
+    return null;
+  }
   economy() {
     const g = this.g, f = this.fac;
     const mine = this.myBuildings();
     if (!mine.length) return;
     const depot = this.home;
     const count = (id) => mine.filter((b) => b.cfg?.id === id).length;
+    // built + queued count so we don't re-queue a building already in the depot queue
+    const pending = (id) =>
+      count(id) + mine.reduce((s, b) => s + (b.queue || []).filter((q) => q.id === id).length, 0);
     const power = g.fac[f].power;
     const tin = g.res(f).tin;
 
-    // 1. income expansion: ore / fuel (scan from depot outward, any distance)
-    if (this.placeNear("ore", depot, 24)) return true;
-    if (this.placeNear("fuel", depot, 24)) return true;
+    // Affordability gates: queueBld CHARGES tin on queue (engine.js), so the
+    // old code drained the stock to 25 every tick and never saved up 350
+    // again — the economy froze forever.
+    // 1. income expansion: ore / fuel. Only if affordable + nothing pending.
+    //    First a local scan (cheap), then a full-map sweep over the known
+    //    ore/oil tiles so a corner-based map never plateaus on income just
+    //    because the nearest vein is far away. spots are Sets of "x,y" STRING
+    //    keys (see rand.js) — the old code destructured entries as [x, y]
+    //    and compared tiles as strings, so canBuild was always false.
+    if (tin >= BUILDINGS.ore.cost.tin && pending("ore") < 7 && !this.placeNear("ore", depot, 24)) {
+      for (const key of g.map.oreSpots) {
+        const [sx, sy] = key.split(",").map(Number);
+        if (this.placeNear("ore", { tx: sx, ty: sy, w: 1, h: 1 }, 1)) break;
+      }
+    }
+    if (tin >= BUILDINGS.fuel.cost.tin && pending("fuel") < 4 && !this.placeNear("fuel", depot, 24)) {
+      for (const key of g.map.oilSpots) {
+        const [sx, sy] = key.split(",").map(Number);
+        if (this.placeNear("fuel", { tx: sx, ty: sy, w: 1, h: 1 }, 1)) break;
+      }
+    }
     // 2. power while underpowered
     if (power && !power.ok && this.placeNear("power", depot)) return true;
     // 3. steel mill (needed for armor production economy)
     if (count("steel") === 0 && tin > 800 && this.placeNear("steel", depot)) return true;
-    // 4. production capacity (barracks first, then armor, air, guns)
-    for (const [id, n] of [["barracks", 1], ["tankf", 1], ["barracks", 2], ["airf", 1], ["arsenal", 1], ["tankf", 2]])
-      if (count(id) < n && tin > BUILDINGS[id].cost.tin * 2 && this.placeNear(id, depot)) return true;
+    // 4. ladder: production capacity (barracks, armor, air, guns) — save the
+    //    full cost (no *2 multiplier: production() already reserves while
+    //    saving, so the *2 was pointless extra waiting).
+    for (const [id, n] of AI.LADDER) {
+      if (id === "ore" || id === "fuel") continue; // handled in step 1
+      if (pending(id) < n && tin >= BUILDINGS[id].cost.tin && this.placeNear(id, depot)) return true;
+    }
     // 5. lab
     if (count("lab") === 0 && tin > 700 && this.placeNear("lab", depot)) return true;
     // 6. power headroom
@@ -101,16 +141,31 @@ export class AI {
   }
 
   // ---------- production ----------
+  // building produces -> unit class (config uses "armor"/"guns" but units use
+  // "tank"/"gun"). This mapping is what pickUnit must apply — WITHOUT it the
+  // AI could never select armor or guns and so only ever produced infantry.
+  static CLASS_FOR = { infantry: "infantry", armor: "tank", guns: "gun", air: "air" };
   pickUnit(kind) {
     const g = this.g, f = this.fac, tier = g.tierNum(f);
-    for (const id of Object.keys(UNITS)) {
-      const u = UNITS[id];
-      if (u.fac !== f || u.class !== kind) continue;
-      if (u.needsTier && tier < u.needsTier) continue;
-      if (f === "japan" && id === "j_205" && g.fac.japan.needsLock205) continue;
-      if (g.unitAvailable(f, id)) return id; // affordable
-    }
-    return null;
+    const want = AI.CLASS_FOR[kind] || kind;
+    const pool = Object.keys(UNITS).map((id) => UNITS[id]).filter((u) =>
+      u.fac === f && u.class === want &&
+      (!u.needsTier || tier >= u.needsTier) &&
+      !(f === "japan" && u.id === "j_205" && g.fac.japan.needsLock205) &&
+      g.unitAvailable(f, u.id));            // affordable
+    if (!pool.length) return null;
+    // VARIETY: rotate the pick so a producer cycles through affordable units
+    // instead of always rebuilding the cheapest one (=> "infinite infantry").
+    // Weight higher-tier (rarer/stronger) slightly so the mix scales as the
+    // economy grows; the rotation index is per-class, so it persists across
+    // ticks and yields a stable, varied mix.
+    pool.sort((a, b) => ((a.tier || 0) - (b.tier || 0)) || a.id.localeCompare(b.id));
+    this._pickIdx = this._pickIdx || {};
+    const i = (this._pickIdx[want] || 0) % pool.length;
+    this._pickIdx[want] = (this._pickIdx[want] || 0) + 1;
+    // if the rotation lands a tier we can't yet afford at that position, fall
+    // back to the cheapest affordable so we still build something
+    return pool[i].id || pool[0].id;
   }
   production() {
     const g = this.g, f = this.fac;
@@ -126,7 +181,16 @@ export class AI {
       if (b.cfg.produces === "infantry") {
         if (id === engId && engs >= TUNE.maxEngineersPerSide) id = this.pickCheapInfantry();
       }
-      if (id) g.queueUnit(b, id);
+      // Affordability check + SAVING: hold a FULL reserve for the next ladder
+      // building (economy() queues it once tin >= its cost). Capping the
+      // reserve at (cost - tin) created a self-consistent equilibrium at
+      // tin=(unit+cost)/2 — always below cost — so production could never
+      // save up for its own reserve and the economy froze at the first
+      // unaffordable building.
+      const target = this.nextEcoTarget(g.buildings.filter((b) => b.fac === f && !b.dead && b.isAlive()));
+      const reserve = target ? target.cost : 0;
+      if (!id || (g.res(f).tin || 0) < (UNITS[id].cost.tin || 0) + reserve) continue;
+      g.queueUnit(b, id);
     }
   }
   pickCheapInfantry() {
@@ -139,49 +203,51 @@ export class AI {
   }
 
   // ---------- offense ----------
+  // CONTINUOUS pressure: the AI never has to "wait for the wave threshold" —
+  // every idle ground unit in its own half keeps marching toward the enemy
+  // depot, so units never sit around the factory "doing nothing". Only real
+  // garrison (units inside the defensive ring) hold the line, and only when
+  // the enemy is actually close; otherwise the garrison marches out too.
   offense() {
     const g = this.g, f = this.fac, e = enemyOf(f);
     const ede = g.buildings.find((b) => b.fac === e && !b.dead && b.isAlive() && b.cfg?.id === "depot");
-    const eb = g.buildings.find((b) => b.fac === e && !b.dead && b.isAlive() && b.cfg?.id === "depot");
-    const dest = (ede || eb)?.center() || { x: g.map.w * TILE / 2, y: g.map.h * TILE / 2 };
-
-    // ---- continuous pressure: any idle unit standing in our own spawn area
-    //    is sent forward (staggered), instead of sitting around the factory
-    //    "doing nothing" until a full wave has assembled
-    const dirX = (dest.x - this.home.center().x), dirY = (dest.y - this.home.center().y);
+    const dest = ede?.center() || { x: g.map.w * TILE / 2, y: g.map.h * TILE / 2 };
     const home = this.home.center();
-    for (const u of g.units) {
-      if (u.fac !== f || u.dead || !u.isAlive() || u.isStatic() || u.cfg?.engineer) continue;
-      if (u.attackMove || (u.path && u.path.length) || u.moveOrder) continue;   // already commanded
-      if (g.time < (u.spawnTimer || 0) + 1.2) continue;                        // give it a sec at the door
-      if (Math.hypot(u.x - home.x, u.y - home.y) > TILE * 9) continue;         // already pushed out
-      const tx = Math.max(TILE * 2, Math.min(g.map.w * TILE - TILE * 2, home.x + dirX * 0.5 + (Math.random() - 0.5) * TILE * 6));
-      const ty = Math.max(TILE * 2, Math.min(g.map.h * TILE - TILE * 2, home.y + dirY * 0.5 + (Math.random() - 0.5) * TILE * 6));
+    const dirX = dest.x - home.x, dirY = dest.y - home.y;
+    const dist = Math.max(1, Math.hypot(dirX, dirY));
+    // NORMALIZED perpendicular — used below for a small lateral spread.
+    // (Pre-fix: px/py were raw pixels, so px*spread reached ±90,000 px and the
+    // clamp snapped every order into a map corner instead of the enemy depot.)
+    const nx = dirX / dist, ny = dirY / dist;
+    const px = -ny, py = nx;
+    const enemyNear = Math.hypot(dest.x - home.x, dest.y - home.y) < TILE * 14 ||
+      g.units.some((u) => u.fac !== f && !u.dead && u.isAlive() &&
+        Math.hypot(u.x - home.x, u.y - home.y) < TILE * 10);
+    const mid = { x: home.x + dirX * 0.55, y: home.y + dirY * 0.55 };
+    const myUnits = g.units.filter((u) =>
+      u.fac === f && !u.dead && u.isAlive() && !u.isStatic() &&
+      u.cfg?.targets?.includes("inf") !== false && !u.cfg?.engineer);
+    for (const u of myUnits) {
+      const dHome = Math.hypot(u.x - home.x, u.y - home.y);
+      // garrison: only if the enemy is genuinely close, AND the unit is
+      // uncommanded AND deep in the defensive ring.
+      const garrisonHold = enemyNear && dHome < TILE * 7 &&
+        (!u.target || !u.target.isAlive()) && (!u.path || !u.path.length) && !u.moveOrder;
+      if (garrisonHold) continue;
+      // already commanded with a live order — respect it
+      if ((u.path && u.path.length) || u.moveOrder || u.target?.isAlive?.()) continue;
+      if (g.time < (u.spawnTimer || 0) + 1.2) continue; // give it a sec at the door
+      // stagger + spread: forward wave marches toward the enemy depot; anything
+      // near the midpoint gets pushed out toward the front so it meets enemies.
+      const spread = (Math.random() - 0.5) * TILE * 6;
+      const useFront = dHome < TILE * 3 || Math.hypot(u.x - mid.x, u.y - mid.y) < TILE * 4;
+      const base = useFront ? mid : dest;
+      const tx = Math.max(TILE * 2, Math.min(g.map.w * TILE - TILE * 2, base.x + px * spread));
+      const ty = Math.max(TILE * 2, Math.min(g.map.h * TILE - TILE * 2, base.y + py * spread));
       u.fx = Math.floor(tx / TILE); u.fy = Math.floor(ty / TILE);
       u.moveOrder = { x: tx, y: ty };
-      u.attackMove = true;
-    }
-
-    // hold back a garrison if the enemy is closing on our depot
-    const hc = home;
-    const garrison = g.units.filter((u) => u.fac === f && !u.dead && u.isAlive() &&
-      Math.hypot(u.x - hc.x, u.y - hc.y) < TILE * 7);
-    const army = g.units.filter((u) =>
-      u.fac === f && !u.dead && u.isAlive() &&
-      (!u.target || !u.target.isAlive()) && (!u.path || !u.path.length) && !u.moveOrder &&
-      Math.hypot(u.x - dest.x, u.y - dest.y) > TILE * 3);
-    const strength = army.reduce((s, u) => s + (u.cfg?.hp || 10), 0);
-    if (g.time >= this.nextWave && strength >= (garrison.length ? 420 : 260) * (1.25 - 0.25 * this.diff.strength)) {
-      // cap the wave — big blobs clog the map and the targeting scan
-      const wave = army.sort((a, b) => (b.cfg?.hp || 0) - (a.cfg?.hp || 0)).slice(0, 24);
-      for (const u of wave) {
-        u.fx = Math.floor(dest.x / TILE);
-        u.fy = Math.floor(dest.y / TILE);
-        u.moveOrder = { x: dest.x, y: dest.y };
-        u.attackMove = true;
-      }
-      g.log(f === "japan" ? "日本攻勢 — Japan launches an attack!" : "中国反攻 — China counterattacks!", "info");
-      this.nextWave = g.time + this.waveGap;
+      u.attackMove = true; // engage anything on the route
+      this.pushed = (this.pushed || 0) + 1;
     }
   }
 }

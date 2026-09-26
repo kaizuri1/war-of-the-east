@@ -240,6 +240,10 @@ export class Game {
   queueUnit(b, id) {
     const u = UNITS[id];
     if (!u || !this.unitAvailable(b.fac, id)) return false;
+    // global unit cap: count alive + queued so the cap never overflows
+    const mine = this.units.filter((x) => x.fac === b.fac && !x.dead).length +
+      this.buildings.reduce((s, x) => x.fac === b.fac ? s + x.queue.length : s, 0);
+    if (mine >= TUNE.maxUnitsPerSide) return false;
     if (!b.queueAdd(id)) return false;
     this.pay(b.fac, u.cost);
     return true;

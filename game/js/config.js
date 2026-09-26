@@ -54,12 +54,13 @@ export const TUNE = {
   fuelEmptySpeedMult: 0.4,
   refuelRate: 25,               // fuel/s at own refinery / tank factory
   refuelRadius: 64,             // px — how close a tank must be to refill
+  airMissionTime: 45,           // sec — flight window before a plane auto-lands
   aiWaveInterval: 45,
   aiAggroMin: 4,
   maxUnitsPerSide: 120,
   zoomMin: 0.5, zoomMax: 2.0,
   basePower: 80,
-  baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+  baseIncomeTin: 6,            // tin/s trickle so a bare base can keep expanding
 };
 
 // ---------- shared building templates (mirrored per faction) ----------
@@ -70,7 +71,7 @@ export const BUILDINGS = {
   power:    { name: "Power Plant",        jp: "発電所", zh: "发电厂", cost: { tin: 300 }, time: 6,  hp: 400,  power: 80,
               slots: 0, produces: null, w: 1, h: 1, desc: "+80 power to the grid." },
   ore:      { name: "Ore Processor",      jp: "鉱石加工所", zh: "矿场", cost: { tin: 350 }, time: 6,  hp: 350,  power: -15,
-              slots: 0, produces: null, w: 1, h: 1, income: { tin: 6 }, placement: "ore", desc: "+6 tin/s. Must sit on an ore vein." },
+              slots: 0, produces: null, w: 1, h: 1, income: { tin: 12 }, placement: "ore", desc: "+12 tin/s. Must sit on an ore vein." },
   steel:    { name: "Steel Mill",         jp: "製鉄所", zh: "钢厂", cost: { tin: 500 }, time: 8,  hp: 400,  power: -20,
               slots: 0, produces: null, w: 1, h: 1, steelMill: true, placement: "any_clear", desc: "Consumes 1 tin/s, outputs 1 steel/s." },
   fuel:     { name: "Fuel Depot",         jp: "油槽所", zh: "炼油厂", cost: { tin: 400 }, time: 7,  hp: 350,  power: -15,

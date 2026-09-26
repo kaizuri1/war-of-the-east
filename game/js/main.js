@@ -157,8 +157,16 @@ function frame(ts) {
       if (!e.__warned) { console.error("[game tick]", e); e.__warned = true; }
     }
   }
-  if (game && game.onUiTick) game.onUiTick(dt);
-  if (renderer && game) renderer.draw(game);
+  // UI tick + render run OUTSIDE the tick try/catch above. A throw in either
+  // (e.g. a plane-specific renderer path) used to escape to here before
+  // requestAnimationFrame, so the rAF chain died and the game froze hard.
+  // Guard them so the frame is ALWAYS rescheduled no matter what.
+  try {
+    if (game && game.onUiTick) game.onUiTick(dt);
+    if (renderer && game) renderer.draw(game);
+  } catch (e) {
+    if (!e.__warned) { console.error("[render]", e); e.__warned = true; }
+  }
   requestAnimationFrame(frame);
 }
 
