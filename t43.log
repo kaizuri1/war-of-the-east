@@ -1,0 +1,11 @@
+== 180s ==
+japan units: { infantry: 39, tank: 1 }
+japan buildings: [ 'depot', 'ore', 'power', 'barracks', 'ore', 'power' ]
+china units: { infantry: 3, tank: 1 }
+japan res: tin=46 oil=0
+plane spawned: id=j_zero air=true hp=150 pos=1792.0,640.0
+== after 30s with plane flying ==
+plane alive: true pos=353.0,321.0 life=29.6 target=true landed=false
+japan units: { infantry: 47, tank: 1, air: 1 }
+THROWS tick=0 ui=0 draw=0 ai=0
+PASS

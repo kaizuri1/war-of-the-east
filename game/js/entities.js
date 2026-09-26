@@ -178,37 +178,15 @@ export class Unit extends Entity {
       }
     }
     const vrange = this.rangePx() * 1.5;
-    // acquire: attack-move (chase), idle hunting (hold fire), or re-acquire a lost lock
+    // acquire: any targetable enemy (unit OR building) within range, whether
+    // this unit is idle, walking to a point, or attacking — i.e. auto-attack
+    // (hold-fire off). Previously a unit only fired when fully stationary (or
+    // after 6s idle at a finished order), and the idle scan iterated only
+    // game.units, so an enemy building in range was never auto-engaged and a
+    // unit following a move path ignored enemies in its path entirely.
     if (!this.target) {
-      let t = null;
-      if (this.attackMove) t = game.nearestEnemy(this, this.rangePx(), game);
-      else if (this.isStatic()) {
-        // idle ground unit: see an enemy in view → stop and fire (C&C hold-fire)
-        if (!this.moving) {
-          for (const e of game.units) {
-            if (e === this || e.fac === fac || e.dead || !e.isAlive()) continue;
-            if (Math.abs(e.x - this.x) > vrange || Math.abs(e.y - this.y) > vrange) continue;
-            if (!targetable(this, e)) continue;
-            t = e; break;
-          }
-        }
-      } else if (!this.moving && !this.moveOrder) {
-        for (const e of game.units) {
-          if (e === this || e.fac === fac || e.dead || !e.isAlive()) continue;
-          if (Math.abs(e.x - this.x) > vrange || Math.abs(e.y - this.y) > vrange) continue;
-          if (!targetable(this, e)) continue;
-          t = e; break;
-        }
-      }
-      if (!t && this.moveOrder && game.time - this.lastHit > 6 && !this.moving) {
-        // long idle at a finished order: look around for anything still in view
-        for (const e of game.units) {
-          if (e === this || e.fac === fac || e.dead || !e.isAlive()) continue;
-          if (Math.abs(e.x - this.x) > vrange || Math.abs(e.y - this.y) > vrange) continue;
-          if (!targetable(this, e)) continue;
-          t = e; break;
-        }
-      }
+      const range = this.attackMove ? this.rangePx() : vrange;
+      const t = game.nearestEnemy(this, range, game);
       if (t) { this.target = t; this.attackMove = false; }
     }
     if (this.target && (!this.target.isAlive() || this.target.dead)) this.target = null;

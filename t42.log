@@ -1,0 +1,37 @@
+bases -> {
+  res: { tin: 300, steel: 250, fuel: 250 },
+  incomeMult: 1,
+  power: { gen: 80, draw: 0, ok: true },
+  upgrades: Set(0) {},
+  needsLock205: false
+} japan has undefined
+UI + Renderer constructed OK
+
+=== AI ECONOMY DIAGNOSTIC (first 200 ticks with logging) ===
+  t=0.5 economy placed=0 ok=false tin=304
+  t=1.0 economy placed=0 ok=false tin=308
+  t=1.5 economy placed=0 ok=false tin=227
+  t=2.1 economy placed=0 ok=false tin=231
+  t=2.6 economy placed=0 ok=false tin=150
+  t=3.1 economy placed=0 ok=false tin=154
+after 3.3s: japan buildings = depot,ore,fuel,power,barracks
+tin: 71 power: {"gen":160,"draw":55,"ok":true}
+ore fields on map: n/a
+buildable ore tiles left for japan: 0  total oreSpots: 225
+
+=== FULL-RUN with AIRPLANE (engine + uiTick + renderer.draw, 180s) ===
+  t=3.6 economy placed=0 ok=false tin=73
+  t=4.1 economy placed=0 ok=false tin=78
+  t=4.6 economy placed=0 ok=false tin=12
+  t=5.2 economy placed=0 ok=false tin=16
+  t=5.7 economy placed=0 ok=false tin=20
+  t=6.2 economy placed=0 ok=false tin=24
+  t=6.7 economy placed=0 ok=false tin=28
+  t=7.2 economy placed=0 ok=false tin=32
+  t=7.7 economy placed=0 ok=false tin=36
+  t=8.3 economy placed=0 ok=false tin=41
+  t=8.8 economy placed=0 ok=false tin=45
+  t=9.3 economy placed=0 ok=false tin=49
+RESULT: throws=0 - none  fires=0 firstFire@t=undefineds  deaths=0   maxProj=0
+china: inf=3 tank=0 gun=0 air=0 | japan: inf=27 tank=0 gun=0 air=0
+end t=183.3 winner=none
