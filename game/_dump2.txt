@@ -1,0 +1,851 @@
+===== INPUT.JS FULL (10829) =====
+// WAR OF THE EAST — input.js
+// Mouse: LMB select/box, RMB move / attack-move / place building, MMB pan, wheel zoom.
+// Keys: WASD/edge-pan, Space pause, Esc cancel build, Ctrl/Shift+1..5 control groups.
+// Coordinates are CSS pixels relative to the canvas; renderer does dpr/zoom transform.
+import { TILE, BUILDINGS } from "./config.js";
+
+export class Input {
+  constructor(canvas, game, renderer, ui) {
+    this.cv = canvas; this.game = game; this.r = renderer; this.ui = ui;
+    this.drag = null;          // box select in progress
+    this.dragSel = null;       // box rect (screen px) for renderer
+    this.panDrag = null;       // last mouse pos while panning
+    this.edges = { l: false, r: false, t: false, b: false };
+    this.buildItem = null;     // building id being placed
+    this.mouse = { wx: 0, wy: 0, over: false };
+    this._s = false;
+
+    canvas.addEventListener("mousemove", (e) => this.onMove(e));
+    canvas.addEventListener("mousedown", (e) => this.onDown(e));
+    canvas.addEventListener("mouseup", (e) => this.onUp(e));
+    canvas.addEventListener("mouseleave", () => { this.mouse.over = false; });
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const rc = this.cv.getBoundingClientRect();
+      const nz = Math.max(0.5, Math.min(2.5, this.r.cam.zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+      this.zoomAt(e.clientX - rc.left, e.clientY - rc.top, nz);
+    }, { passive: false });
+    window.addEventListener("keydown", (e) => { this._s = e.shiftKey; this.onKey(e, true); });
+    window.addEventListener("keyup", (e) => { this._s = e.shiftKey; this.onKey(e, false); });
+  }
+
+  screenToWorld(mx, my) {
+    const c = this.r.cam;
+    return { x: mx / c.zoom + c.x, y: my / c.zoom + c.y };
+  }
+  zoomAt(sx, sy, nz) {
+    const c = this.r.cam;
+    const wx = sx / c.zoom + c.x, wy = sy / c.zoom + c.y;
+    c.zoom = nz;
+    c.x = wx - sx / nz; c.y = wy - sy / nz;
+    this.clampCam();
+  }
+  clampCam() {
+    const c = this.r.cam;
+    const vw = this.cv.clientWidth / c.zoom, vh = this.cv.clientHeight / c.zoom;
+    const W = this.game.map.w * TILE, H = this.game.map.h * TILE;
+    c.x = Math.max(0, Math.min(Math.max(0, W - vw), c.x));
+    c.y = Math.max(0, Math.min(Math.max(0, H - vh), c.y));
+  }
+  setBuild(id) {
+    this.buildItem = id;
+    if (id) { this.drag = null; this.dragSel = null; }
+    if (this.ui) this.ui.setBuildActive(id);
+    this.r.buildGhost = id ? this.r.buildGhost : null;
+  }
+
+  onMove(e) {
+    const r = this.cv.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const w = this.screenToWorld(mx, my);
+    this.mouse = { wx: w.x, wy: w.y, over: true };
+    // build ghost follows cursor
+    if (this.buildItem) this.r.buildGhost = this.ghostAt(mx, my);
+    // edge pan
+    const E = 20;
+    this.edges.l = this.edges.l || mx < E;
+    this.edges.r = this.edges.r || mx > this.cv.clientWidth - E;
+    this.edges.t = this.edges.t || my < E;
+    this.edges.b = this.edges.b || my > this.cv.clientHeight - E;
+    // box select drag
+    if (this.drag && !this.panDrag) {
+      this.dragSel = {
+        x: Math.min(this.drag.x0, mx), y: Math.min(this.drag.y0, my),
+        w: Math.abs(mx - this.drag.x0), h: Math.abs(my - this.drag.y0),
+      };
+    }
+    if (this.panDrag) {
+      this.r.cam.x -= mx - this.panDrag.x;
+      this.r.cam.y -= my - this.panDrag.y;
+      this.panDrag = { x: mx, y: my };
+      this.clampCam();
+    }
+  }
+  ghostAt(mx, my) {
+    const cfg = BUILDINGS[this.buildItem];
+    if (!cfg) return null;
+    const w = this.screenToWorld(mx, my);
+    const tx = Math.floor(w.x / TILE) - Math.floor((cfg.w || 1) / 2);
+    const ty = Math.floor(w.y / TILE) - Math.floor((cfg.h || 1) / 2);
+    const ok = this.game.canBuild(this.buildItem, this.game.player, tx, ty);
+    return { id: this.buildItem, tx, ty, ok };
+  }
+  onDown(e) {
+    const r = this.cv.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (e.button === 1) { e.preventDefault(); this.panDrag = { x: mx, y: my }; return; }
+    if (e.button === 2) { this.onRight(mx, my); return; }
+    if (e.button === 0) {
+      if (this.buildItem) return; // LMB re-click on bar cancels; map click ignored
+      this.drag = { x0: mx, y0: my };
+      this.dragSel = null;
+    }
+  }
+  onUp(e) {
+    if (e.button === 1) { this.panDrag = null; return; }
+    const r = this.cv.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (e.button === 2) return;
+    if (e.button !== 0) return;
+    if (this.buildItem) { // single LMB while ghosting: try to place
+      const gh = this.ghostAt(mx, my);
+      if (gh && gh.ok) this.game.startBuild(this.buildItem, this.game.player, gh.tx, gh.ty);
+      return;
+    }
+    const d = this.drag; this.drag = null;
+    if (!d) return;
+    const dx = Math.abs(mx - d.x0), dy = Math.abs(my - d.y0);
+    if (dx < 4 && dy < 4) this.selectAt(mx, my, e.ctrlKey || e.shiftKey);
+    else {
+      this.dragSel = { x: Math.min(d.x0, mx), y: Math.min(d.y0, my), w: dx, h: dy };
+      setTimeout(() => { if (this.dragSel && !this.drag) this.dragSel = null; }, 120);
+      const a = this.screenToWorld(this.dragSel.x, this.dragSel.y);
+      const b = this.screenToWorld(this.dragSel.x + this.dragSel.w, this.dragSel.y + this.dragSel.h);
+      this.boxSelect(a, b, e.ctrlKey || e.shiftKey);
+    }
+  }
+  selectAt(mx, my, add) {
+    const g = this.game;
+    const wp = this.screenToWorld(mx, my);
+    let u = null, b = null;
+    for (const un of g.units) {
+      if (un.dead || !un.isAlive()) continue;
+      if (Math.hypot(un.x - wp.x, un.y - wp.y) < un.footprint() + 4) { u = un; break; }
+    }
+    if (!u) {
+      const tx = Math.floor(wp.x / TILE), ty = Math.floor(wp.y / TILE);
+      for (const bd of g.buildings) {
+        if (bd.dead || !bd.isAlive()) continue;
+        if (tx >= bd.tx && tx < bd.tx + bd.w && ty >= bd.ty && ty < bd.ty + bd.h) { b = bd; break; }
+      }
+    }
+    if (!add) { g.units.forEach((x) => x.selected = false); g.buildings.forEach((x) => x.selected = false); }
+    if (u) u.selected = true;
+    if (b) b.selected = true;
+    if (this.ui) this.ui.refresh();
+  }
+  boxSelect(a, b, add) {
+    const g = this.game;
+    const minx = Math.min(a.x, b.x), maxx = Math.max(a.x, b.x);
+    const miny = Math.min(a.y, b.y), maxy = Math.max(a.y, b.y);
+    let anyUnit = false;
+    for (const un of g.units) {
+      if (un.dead || !un.isAlive()) continue;
+      if (un.x > minx && un.x < maxx && un.y > miny && un.y < maxy) { un.selected = true; anyUnit = true; }
+      else if (!add) un.selected = false;
+    }
+    g.buildings.forEach((x) => x.selected = false);
+    if (anyUnit) { if (this.ui) this.ui.refresh(); return; }
+    if (!add) g.units.forEach((x) => x.selected = false);
+    for (const bd of g.buildings) {
+      if (bd.dead || !bd.isAlive()) continue;
+      const x0 = bd.tx * TILE, x1 = (bd.tx + bd.w) * TILE, y0 = bd.ty * TILE, y1 = (bd.ty + bd.h) * TILE;
+      if (x1 > minx && x0 < maxx && y1 > miny && y0 < maxy) bd.selected = true;
+    }
+    if (this.ui) this.ui.refresh();
+  }
+  onRight(mx, my) {
+    const g = this.game;
+    const wp = this.screenToWorld(mx, my);
+    if (this.buildItem) {
+      const gh = this.ghostAt(mx, my);
+      if (gh && gh.ok) {
+        if (g.startBuild(this.buildItem, g.player, gh.tx, gh.ty) && !this._s) this.setBuild(null);
+      }
+      return;
+    }
+    const selU = g.units.filter((u) => u.selected && !u.dead && u.isAlive());
+    const selB = g.buildings.filter((b) => b.selected && !b.dead && b.isAlive());
+    if (!selU.length && !selB.length) {
+      for (const un of g.units)
+        if (!un.dead && un.isAlive() && un.fac !== g.player && Math.hypot(un.x - wp.x, un.y - wp.y) < un.footprint() + 4) {
+          g.units.forEach((x) => x.selected = false);
+          un.selected = true;
+          if (this.ui) this.ui.refresh();
+          return;
+        }
+      return;
+    }
+    let tgt = null;
+    for (const un of g.units) {
+      if (un.dead || !un.isAlive() || un.fac === g.player) continue;
+      if (Math.hypot(un.x - wp.x, un.y - wp.y) < un.footprint() + 6) { tgt = un; break; }
+    }
+    if (!tgt) {
+      const tx = Math.floor(wp.x / TILE), ty = Math.floor(wp.y / TILE);
+      for (const bd of g.buildings) {
+        if (bd.dead || !bd.isAlive() || bd.fac === g.player) continue;
+        if (tx >= bd.tx && tx < bd.tx + bd.w && ty >= bd.ty && ty < bd.ty + bd.h) { tgt = bd; }
+      }
+    }
+    for (const u of selU) {
+      if (u.isStatic()) continue; // static guns don't move
+      if (tgt) { u.target = tgt; u.fx = null; u.fy = null; u.moveOrder = null; u.attackMove = false; }
+      else {
+        u.fx = Math.floor(wp.x / TILE); u.fy = Math.floor(wp.y / TILE);
+        u.moveOrder = { x: wp.x, y: wp.y };
+        u.path = null;
+        u.attackMove = !tgt;
+      }
+    }
+    if (this.ui) this.ui.refresh();
+  }
+  onKey(e, down) {
+    const k = e.key.toLowerCase();
+    if (e.code === "Space") { if (down && !e.repeat) this.game.paused = !this.game.paused; e.preventDefault(); return; }
+    if (e.ctrlKey && /^Digit[1-5]$/.test(e.code) && down) {
+      const n = parseInt(e.code.slice(6), 10);
+      const sel = this.game.units.filter((u) => u.selected && !u.dead && u.isAlive());
+      if (e.shiftKey) sel.forEach((u) => u.controlGroup = n);
+      else {
+        const grp = this.game.units.filter((u) => !u.dead && u.isAlive() && u.controlGroup === n);
+        this.game.units.forEach((x) => x.selected = false);
+        this.game.buildings.forEach((x) => x.selected = false);
+        grp.forEach((x) => x.selected = true);
+        if (this.ui) this.ui.refresh();
+      }
+      e.preventDefault();
+      return;
+    }
+    const was = this.edges;
+    if (down) {
+      if (k === "w" || k === "arrowup") this.edges.t = true;
+      else if (k === "s" || k === "arrowdown") this.edges.b = true;
+      else if (k === "a" || k === "arrowleft") this.edges.l = true;
+      else if (k === "d" || k === "arrowright") this.edges.r = true;
+      else if (k === "escape" && this.buildItem) this.setBuild(null);
+    } else {
+      if (k === "w" || k === "arrowup" || e.code === "ArrowUp") this.edges.t = false;
+      else if (k === "s" || k === "arrowdown" || e.code === "ArrowDown") this.edges.b = false;
+      else if (k === "a" || k === "arrowleft" || e.code === "ArrowLeft") this.edges.l = false;
+      else if (k === "d" || k === "arrowright" || e.code === "ArrowRight") this.edges.r = false;
+    }
+    void was;
+  }
+  update(dt) {
+    const c = this.r.cam;
+    const sp = 320 * dt / c.zoom;
+    if (this.edges.l) c.x -= sp;
+    if (this.edges.r) c.x += sp;
+    if (this.edges.t) c.y -= sp;
+    if (this.edges.b) c.y += sp;
+    if (this.edges.l || this.edges.r || this.edges.t || this.edges.b) this.clampCam();
+  }
+}
+
+===== UI.JS (17498) =====
+// WAR OF THE EAST — ui.js
+// C&C-style HUD:
+//   • top resource strip (time / tin / steel / fuel / power / army)
+//   • RIGHT-side vertical COMMAND PANEL with tabs:
+//        INFANTRY · VEHICLES · RESEARCH · BUILDINGS
+//   • bottom-left minimap + selection/status panel
+// Talks to the real engine:
+//   fac state  : game.fac[game.player] = { res{tin,steel,fuel}, power{gen,draw,ok},
+//                upgrades:Set }
+//   commands   : game.canBuild, game.startBuild, game.queueUnit,
+//                game.canResearch, game.research, game.unitAvailable,
+//                game.hasLab, game.tierNum, game.canAfford
+//   selection  : game.units[].selected / game.buildings[].selected
+//   camera     : r.cam {x,y,zoom}, canvas css size -> minimap viewport
+/* global document, window */
+import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META } from "./config.js";
+import { T } from "./rand.js";
+import { unitSpriteKey, bSpriteKey, SPRITES } from "./sprites.js";
+
+// unit class -> the factory `produces` value that can build it
+const CLASS_PROD = { infantry: "infantry", tank: "armor", gun: "guns", air: "air" };
+
+export class UI {
+  constructor(root, game, canvas, input) {
+    this.root = root;
+    this.g = game;
+    this.cv = canvas;
+    this.r = canvas.__renderer || null; // renderer set from main.js
+    this.in = input;
+    this.input = input;          // alias for convenience
+    this.tab = "BUILDINGS";
+    this._th = new Map();       // id -> data-url thumbnail
+    this._buildId = null;
+
+    // NOTE: root hosts the main game canvas (#view). Wiping innerHTML removes
+    // it, so the renderer would draw to a detached canvas -> black screen.
+    // Re-append the canvas after the wipe.
+    const keep = root.querySelector("#view") || this.cv;
+
+    root.innerHTML = `
+      <div id="res"></div>
+      <div id="hud-match"></div>
+      <div id="command">
+        <div id="cmdTabs"></div>
+        <div id="cmdBody" class="cmd-scroll"></div>
+      </div>
+      <div id="hud-bottom">
+        <div id="mmwrap">
+          <canvas id="minimap" width="180" height="180"></canvas>
+        </div>
+        <div id="sel"></div>
+      </div>
+      <div id="over" class="hidden">
+        <div class="over-card">
+          <div class="over-title"></div>
+          <div class="over-sub"></div>
+          <button class="overbtn" id="overRestart">RESTART — ENTER</button>
+        </div>
+      </div>`;
+
+    if (keep) root.appendChild(keep); // restore the game canvas (was wiped above)
+
+    const match = root.querySelector("#hud-match");
+    if (match) match.textContent =
+      `${game.playerName} vs ${game.aiName} · ${game.map.name || "field"}` +
+      (game.diff ? ` · AI ${game.diff.label}` : "");
+
+    this.mm = root.querySelector("#minimap");
+    this.mctx = this.mm.getContext("2d");
+    this.buildTabs();
+    this.bindBody();
+    this.refresh();
+  }
+  attachRenderer(r) { this.r = r; }
+  attachSfx() { this._sfx = this.g._sfx; }
+  // keep input.buildItem in sync with what the cards highlight
+  setBuildActive(id) { this._buildId = id; if (this.input) this.input.buildItem = id; }
+
+  // ---- tabs -------------------------------------------------------------
+  buildTabs() {
+    const tabs = [
+      ["BUILDINGS", "B", "Building Production"],
+      ["INFANTRY", "I", "Infantry & crews"],
+      ["VEHICLES", "V", "Tanks, guns, aircraft"],
+      ["RESEARCH", "R", "Upgrades (needs Lab)"],
+    ];
+    const el = this.root.querySelector("#cmdTabs");
+    el.innerHTML = tabs.map(([id, k, tip]) =>
+      `<div class="cmd-tab" data-tab="${id}" title="${tip}"><span class="ct-label">${id}</span><kbd>${k}</kbd></div>`
+    ).join("");
+    el.addEventListener("click", (e) => {
+      const t = e.target.closest(".cmd-tab");
+      if (!t) return;
+      this.tab = t.dataset.tab;
+      this.beep("click"); this.refresh();
+    });
+    // hotkeys B/I/V/R
+    window.addEventListener("keydown", (e) => {
+      if (this.g && !this.g.winner && !e.ctrlKey && !e.altKey && !e.metaKey && document.activeElement.tagName !== "INPUT") {
+        const map = { b: "BUILDINGS", i: "INFANTRY", v: "VEHICLES", r: "RESEARCH" };
+        const k = e.key.toLowerCase();
+        if (map[k] && map[k] !== this.tab) { this.tab = map[k]; this.beep("click"); this.refresh(); }
+      }
+    });
+  }
+  bindBody() {
+    const body = this.root.querySelector("#cmdBody");
+    body.addEventListener("click", (e) => {
+      const it = e.target.closest(".card");
+      if (!it) return;
+      this.onCard(it.dataset.kind, it.dataset.id);
+    });
+    // selection panel: pop-queue button
+    this.root.querySelector("#sel").addEventListener("click", (e) => {
+      if (e.target.closest("[data-queue]")) this.popQueue();
+    });
+  }
+  onCard(kind, id) {
+    const g = this.g;
+    if (g.winner) return;
+    if (kind === "building") {
+      this.onBuild(id);
+    } else if (kind === "unit") {
+      this.onQueueUnit(id);
+    } else if (kind === "research") {
+      if (g.research(g.player, id)) this.beep("research");
+      else this.beep("error");
+    }
+    this.refresh();
+  }
+  fac() { const f = this.g.fac[this.g.player]; return f; }
+  owned(id) {
+    const g = this.g;
+    return g.buildings.some((b) => !b.dead && b.isAlive() && b.fac === g.player && b.cfg.id === id);
+  }
+  anyFactoryFor(produces) {
+    // prefer the selected factory, then the one with the least queue
+    const g = this.g;
+    const cands = g.buildings.filter((b) =>
+      !b.dead && b.isAlive() && !b.underConstruction() && b.fac === g.player &&
+      b.cfg && b.cfg.slots > 0 && b.cfg.produces === produces);
+    const sel = cands.find((b) => b.selected);
+    const pool = sel ? cands.filter((b) => b === sel || b.queue.length === 0) : cands;
+    if (!pool.length) return null;
+    pool.sort((a, b) => a.queue.length - b.queue.length);
+    return pool[0];
+  }
+  onBuild(id) {
+    const g = this.g, b = BUILDINGS[id];
+    if (!b || id === "depot") return;
+    if (b.cost && !g.canAfford(g.player, b.cost)) { this.beep("error"); return; }
+    if (this._buildId === id) { this._buildId = null; if (this.in) this.in.setBuild(null); return; }
+    this._buildId = id;
+    if (this.in) this.in.setBuild(id);
+    this.beep("click");
+  }
+  onQueueUnit(id) {
+    const g = this.g, u = UNITS[id];
+    if (!u) return;
+    const fac = g.player;
+    if (u.needsTier && g.tierNum(fac) < u.needsTier) { this.beep("error"); return; }
+    const f = g.fac[fac];
+    if (!f.res.tin || g.fac[fac].res.tin < (u.cost.tin || 0)) { this.beep("error"); return; }
+    const fab = this.anyFactoryFor(CLASS_PROD[u.class]);
+    if (!fab) { this.beep("error"); setStatus("Need a completed factory (" + (CLASS_PROD[u.class]) + ").", 2.5); return; }
+    if (g.queueUnit(fab, id)) this.beep("spawn");
+    else this.beep("error");
+  }
+  popQueue() {
+    const g = this.g;
+    const b = g.buildings.find((x) => x.selected && !x.dead && x.isAlive());
+    if (b && b.queue.length) { b.queue.shift(); b.queueTimer = 0; }
+  }
+
+  // ---- thumbnails -------------------------------------------------------
+  thumb(kind, id) {
+    if (this._th.has(kind + ":" + id)) return this._th.get(kind + ":" + id);
+    let url = "";
+    try {
+      const g = this.g;
+      const src = kind === "building" ? SPRITES[bSpriteKey(g.player, BUILDINGS[id])] : SPRITES[unitSpriteKey(UNITS[id])];
+      if (src) {
+        const c = document.createElement("canvas"); c.width = 40; c.height = 40;
+        c.getContext("2d").drawImage(src, 0, 0, 40, 40);
+        url = c.toDataURL();
+      }
+    } catch (e) { url = ""; }
+    this._th.set(kind + ":" + id, url);
+    return url;
+  }
+
+  // ---- card builders ----------------------------------------------------
+  costStr(cost) {
+    if (!cost) return "";
+    return [cost.tin, cost.steel, cost.fuel].filter((v) => v > 0)
+      .map((v, i) => v + (i === 0 ? " ◆" : i === 1 ? " ✚" : " ⛽")).join(" ");
+  }
+  buildingCard(id) {
+    const g = this.g, c = BUILDINGS[id], fac = g.player;
+    if (id === "depot") return "";
+    const affordable = g.canAfford(fac, c.cost);
+    const active = this._buildId === id;
+    const meta = [
+      c.produces ? "produces " + c.produces : (c.power > 0 ? "+" + c.power + "⚡ power" : (c.power < 0 ? c.power + "⚡ draw" : "fortification")),
+      c.slots ? c.slots + "-slot" : "",
+    ].filter(Boolean).join(" · ");
+    return `<div class="card ${affordable ? "" : "off"} ${active ? "active" : ""}" data-kind="building" data-id="${id}">
+      <div class="thumb">${this.thumb("building", id) ? `<img src="${this.thumb("building", id)}">` : `<span>${initials(c.name)}</span>`}</div>
+      <div class="cbody"><div class="nm">${c.name}</div>
+        <div class="meta">${meta}</div></div>
+      <div class="cost">${this.costStr(c.cost)}</div>
+    </div>`;
+  }
+  unitCard(id) {
+    const g = this.g, c = UNITS[id], fac = g.player, f = g.fac[fac];
+    if (!c) return "";
+    const locked = c.needsTier && g.tierNum(fac) < c.needsTier;
+    const affordable = !locked && g.canAfford(fac, c.cost) && g.unitAvailable(fac, id);
+    const cls = { infantry: "inf", tank: "veh", gun: "veh", air: "air" }[c.class];
+    const fab = this.anyFactoryFor(CLASS_PROD[c.class]);
+    return `<div class="card ${affordable ? "" : "off"}" data-kind="unit" data-id="${id}">
+      <div class="thumb ${cls}">${this.thumb("unit", id) ? `<img src="${this.thumb("unit", id)}">` : `<span>${initials(c.name)}</span>`}</div>
+      <div class="cbody"><div class="nm">${c.name}${locked ? `<span class="lock">T${c.needsTier}</span>` : ""}</div>
+        <div class="meta">hp ${c.hp} · dmg ${c.dmg}${fab ? "" : `<em class="no">no factory</em>`}</div></div>
+      <div class="cost">${this.costStr(c.cost)}</div>
+    </div>`;
+  }
+  researchCard(up) {
+    const g = this.g, fac = g.player, f = g.fac[fac];
+    const done = f.upgrades.has(up.id);
+    const hasLab = g.hasLab(fac);
+    const affordable = !done && hasLab && f.res.tin >= (up.cost || 0);
+    return `<div class="card ${done ? "done" : affordable ? "" : "off"}" data-kind="research" data-id="${up.id}">
+      <div class="thumb rs"><span>T${up.tier}</span></div>
+      <div class="cbody"><div class="nm">${up.name}</div>
+        <div class="meta">${done ? "researched ✓" : hasLab ? "T" + up.tier + " upgrade" : "needs Upgrades Lab"}</div></div>
+      <div class="cost">${up.cost ? up.cost + " ◆" : ""}</div>
+    </div>`;
+  }
+
+  // ---- refresh ----------------------------------------------------------
+  refresh() {
+    this.refreshRes();
+    const g = this.g;
+    this.root.querySelectorAll(".cmd-tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === this.tab));
+    const body = this.root.querySelector("#cmdBody");
+    let html = "";
+    if (this.tab === "BUILDINGS") html = Object.keys(BUILDINGS).filter((k) => k !== "depot").map((id) => this.buildingCard(id)).join("") || `<div class="dim">No buildings.</div>`;
+    else if (this.tab === "INFANTRY") html = Object.values(UNITS).filter((u) => u.fac === g.player && u.class === "infantry").map((u) => this.unitCard(u.id)).join("") || `<div class="dim">No infantry.</div>`;
+    else if (this.tab === "VEHICLES") html = Object.values(UNITS).filter((u) => u.fac === g.player && (u.class === "tank" || u.class === "gun" || u.class === "air")).map((u) => this.unitCard(u.id)).join("") || `<div class="dim">No vehicles.</div>`;
+    else if (this.tab === "RESEARCH") html = UPGRADES.map((up) => this.researchCard(up)).join("") || `<div class="dim">No upgrades.</div>`;
+    body.innerHTML = html;
+  }
+  refreshRes() {
+    const g = this.g, f = g.fac[g.player];
+    const r = f.res, p = f.power;
+    const army = g.units.filter((u) => u.fac === g.player && !u.dead && u.isAlive()).length;
+    const el = this.root.querySelector("#res");
+    const pw = p.ok ? "ok" : "low";
+    el.innerHTML =
+      `<span class="ri">⏱ <b>${fmtTime(g.time)}</b></span>` +
+      `<span class="ri" title="Tin / metal">◆ <b>${(r.tin | 0)}</b></span>` +
+      `<span class="ri" title="Steel / ore">✚ <b>${(r.steel | 0)}</b></span>` +
+      `<span class="ri" title="Fuel / oil">⛽ <b>${(r.fuel | 0)}</b></span>` +
+      `<span class="ri ${pw}" title="Power used / generated">⚡ <b>${(p.draw | 0)}/${(p.gen | 0)}</b></span>` +
+      `<span class="ri" title="Units on field">🪖 <b>${army}</b></span>` +
+      (g.paused ? `<span class="ri paused">⏸ PAUSED</span>` : "") +
+      (g.winner ? `<span class="ri over">— ${g.winner === g.player ? "VICTORY" : "DEFEAT"} —</span>` : "");
+  }
+
+  // Game-over banner: shown when the depot is lost/captured; Enter restarts.
+  showOver(winner) {
+    const g = this.g;
+    const win = winner === g.player;
+    const ov = this.root.querySelector("#over");
+    ov.querySelector(".over-title").textContent = win ? "VICTORY — 大捷" : "DEFEAT — 敗北";
+    ov.querySelector(".over-title").className = "over-title " + (win ? "win" : "lose");
+    ov.querySelector(".over-sub").textContent = win
+      ? `The enemy depot has fallen. ${g.playerName} holds the East.`
+      : `Your depot has fallen. ${g.aiName} takes the East.`;
+    ov.classList.remove("hidden");
+    if (!this._overBound) {
+      this._overBound = true;
+      const restart = () => location.reload();
+      ov.querySelector("#overRestart").addEventListener("click", restart);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && g.winner) restart();
+      });
+    }
+  }  // engine already played "win" at the winning moment
+  // Per-frame lightweight update (resources, selection, minimap, build grid)
+  uiTick(dt) {
+    const g = this.g;
+    g._uiAcc = (g._uiAcc || 0) + dt;
+    if (g._uiAcc < 0.15) return;      // throttle full DOM to ~6fps
+    g._uiAcc = 0;
+    this.refreshRes();
+    this.refreshSel();
+    this.drawMinimap();
+    // keep card affordability / tier-unlocks / research state live (1s cadence)
+    g._gridAcc = (g._gridAcc || 0) + 0.15;
+    if (g._gridAcc >= 1) { g._gridAcc = 0; this.refresh(); }
+  }
+  refreshSel() {
+    const g = this.g;
+    const su = g.units.filter((u) => u.selected && !u.dead && u.isAlive());
+    const sb = g.buildings.filter((b) => b.selected && !b.dead && b.isAlive());
+    const el = this.root.querySelector("#sel");
+    let h = "";
+    if (su.length) {
+      const c = su[0].cfg;
+      const hp = Math.round(su.reduce((a, u) => a + u.hp, 0) / su.length);
+      h = `<div class="selhead"><span>${c.name}${su.length > 1 ? " ×" + su.length : ""}</span><span class="tag">${c.class}</span></div>
+          <div class="selrow">avg hp ${hp}/${c.hp}</div>
+          <div class="selrow dim">dmg ${c.dmg} · range ${Math.round(c.range)} · sp ${c.speed}</div>
+          <div class="selhint">RMB move · RMB+enemy attack · CTR+1..5 group</div>`;
+    } else if (sb.length) {
+      const b = sb[0], q = b.queue || [];
+      h = `<div class="selhead"><span>${b.cfg.name}</span><span class="tag">${b.cfg.produces || "building"}</span></div>
+          <div class="selrow">hp ${Math.round(b.hp)}/${b.maxHp}${b.underConstruction() ? " · under construction" : ""}${b.underpowered ? " · ⚠ NO POWER" : ""}</div>
+          ${b.cfg.slots ? `<div class="selrow">queue ${q.length}/${b.cfg.slots}${q.length ? " · " + q.map((x) => UNITS[x]?.name || x).join(", ") : " · empty"}</div>
+          <button class="selbtn" data-queue>✕ POP QUEUE</button>` : ""}`;
+    } else {
+      h = `<div class="selhint">Left drag = select · RMB = move/attack<br>Cmd bar: <b>B</b>uildings <b>I</b>nfantry <b>V</b>ehicles <b>R</b>esearch<br>Space = pause · Esc = cancel build</div>`;
+    }
+    if (el._h !== h) { el.innerHTML = h; el._h = h; }
+  }
+
+  drawMinimap() {
+    const g = this.g, m = this.mctx, W = MAP_W, H = MAP_H;
+    const cw = this.mm.width, ch = this.mm.height;
+    const sx = cw / W, sy = ch / H;
+    // terrain (downsample 2 tiles per pixel-ish)
+    m.fillStyle = "#20301a"; m.fillRect(0, 0, cw, ch);
+    const ts = g.map.tiles || [];
+    const step = 2;
+    for (let ty = 0; ty < H; ty += step) for (let tx = 0; tx < W; tx += step) {
+      const t = ts[ty * W + tx] || 0;
+      if (t === T.ORE) m.fillStyle = "#6b5a3a";
+      else if (t === T.OIL) m.fillStyle = "#2a2018";
+      else if (t === T.ROCK) m.fillStyle = "#3a3a3a";
+      else if (t === T.TREE) m.fillStyle = "#1c3315";
+      else m.fillStyle = "#24361c";
+      m.fillRect(tx * sx, ty * sy, sx * step, sy * step);
+    }
+    // buildings
+    for (const b of g.buildings) { if (b.dead) continue; m.fillStyle = b.fac === g.player ? "#3fd66f" : "#f0603a"; m.fillRect(b.tx * sx, b.ty * sy, b.w * sx + 1, b.h * sy + 1); }
+    // units (positions are pixels -> divide by TILE for tile space)
+    for (const u of g.units) { if (u.dead || !u.isAlive()) continue; m.fillStyle = u.fac === g.player ? "#8dffae" : "#ffcf6a"; m.fillRect(u.x / TILE * sx - 1, u.y / TILE * sy - 1, 2, 2); }
+    // camera viewport rectangle
+    if (this.r) {
+      const vw = this.cv.clientWidth / this.r.cam.zoom, vh = this.cv.clientHeight / this.r.cam.zoom;
+      const x = this.r.cam.x / TILE * sx, y = this.r.cam.y / TILE * sy;
+      m.strokeStyle = "#ffffff"; m.lineWidth = 1;
+      m.strokeRect(x, y, (vw / TILE) * sx, (vh / TILE) * sy);
+    }
+  }
+
+  // legacy compat (input.js / main.js may call)
+  selectInfo() {} 
+  beep(t) { if (this._sfx) this._sfx(t); }
+}
+
+export function fmtTime(t) {
+  t = Math.max(0, Math.floor(t));
+  return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+}
+function initials(name) { return name.split(/\s+/).map((s) => s[0]).slice(0, 2).join("").toUpperCase(); }
+function setStatus(msg, s) { /* status surfaced via selection panel is enough */ void s; void msg; }
+
+===== INDEX.HTML =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>War of the East — 東洋戦争 (1937–1945)</title>
+  <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+  <div id="menu"></div>
+  <div id="game" class="hidden">
+    <canvas id="view"></canvas>
+    <!-- UI panels are injected here by js/ui.js -->
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
+
+===== RENDERER.JS (8586) =====
+// WAR OF THE EAST — renderer.js
+// Canvas 2D: terrain, buildings, units, projectiles, selection, build ghost.
+// Camera: cam.x/y (world px at canvas top-left), cam.zoom.
+import { TILE, MAP_W, MAP_H, FACTION_META, BUILDINGS } from "./config.js";
+import { T } from "./rand.js";
+import { SPRITES, TILES, unitSpriteKey, bSpriteKey } from "./sprites.js";
+
+export class Renderer {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.g = canvas.getContext("2d");
+    this.cam = { x: 0, y: 0, zoom: 1 };
+    this.buildGhost = null;   // {id, tx, ty, ok}
+    this.dragSel = null;      // {x,y,w,h} in CSS px — synced from input
+    this.hover = { tx: -1, ty: -1 };
+  }
+  resize() {
+    const dpr = window.devicePixelRatio || 1;
+    this.cv.width = this.cv.clientWidth * dpr;
+    this.cv.height = this.cv.clientHeight * dpr;
+    this.dpr = dpr;
+  }
+  screenToWorld(sx, sy) {
+    const r = this.cv.getBoundingClientRect();
+    return {
+      x: (sx - r.left) / this.cam.zoom + this.cam.x,
+      y: (sy - r.top) / this.cam.zoom + this.cam.y,
+    };
+  }
+  clampCam(game) {
+    const vw = this.cv.clientWidth / this.cam.zoom;
+    const vh = this.cv.clientHeight / this.cam.zoom;
+    const ww = MAP_W * TILE, wh = MAP_H * TILE;
+    this.cam.x = Math.max(0, Math.min(ww - vw, this.cam.x));
+    this.cam.y = Math.max(0, Math.min(wh - vh, this.cam.y));
+  }
+  draw(game) {
+    const g = this.g, c = this.cam, z = c.zoom;
+    // clear last frame, then apply camera transform
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = "#10150d";
+    g.fillRect(0, 0, this.cv.width, this.cv.height);
+    g.setTransform(this.dpr * z, 0, 0, this.dpr * z, -c.x * z * this.dpr, -c.y * z * this.dpr);
+    // visible tile range
+    const x0 = Math.max(0, Math.floor(c.x / TILE) - 1);
+    const y0 = Math.max(0, Math.floor(c.y / TILE) - 1);
+    const x1 = Math.min(MAP_W - 1, Math.ceil((c.x + this.cv.clientWidth / z) / TILE) + 1);
+    const y1 = Math.min(MAP_H - 1, Math.ceil((c.y + this.cv.clientHeight / z) / TILE) + 1);
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++)
+        this.drawTile(game, tx, ty);
+    // build ghost
+    if (this.buildGhost) this.drawGhost(game);
+    // selection rings under units
+    for (const e of game.units) if (e.selected) this.ring(e, "#ffe873");
+    for (const b of game.buildings) if (!b.dead && b.selected) this.bRing(b, "#ffe873");
+    // buildings
+    for (const b of game.buildings) if (!b.dead) this.drawBuilding(game, b);
+    // units
+    for (const u of game.units) if (!u.dead) this.drawUnit(game, u);
+    // projectiles on top
+    for (const p of game.projectiles) this.drawProjectile(p);
+    // rubber-band selection box (screen space)
+    if (this.dragSel) {
+      g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      g.strokeStyle = "#ffe873"; g.lineWidth = 1;
+      g.fillStyle = "rgba(255,232,115,0.12)";
+      const s = this.dragSel;
+      g.fillRect(s.x, s.y, s.w, s.h);
+      g.strokeRect(s.x + 0.5, s.y + 0.5, s.w, s.h);
+    }
+    this.ox = null;
+  }
+  drawTile(game, tx, ty) {
+    const g = this.g;
+    const t = game.map.tiles[ty * game.map.w + tx] || 0;
+    let img = t === T.ORE ? TILES.ore : t === T.OIL ? TILES.oil : t === T.ROCK ? TILES.rock : t === T.TREE ? TILES.tree : TILES.grass;
+    g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
+  }
+  drawBuilding(game, b) {
+    const g = this.g;
+    const img = SPRITES[bSpriteKey(b.fac, b.cfg)];
+    const W = b.w * TILE, H = b.h * TILE;
+    const ex = b.tx * TILE, ey = b.ty * TILE;
+    if (img) g.drawImage(img, ex, ey, W, H);
+    else { g.fillStyle = FACTION_META[b.fac].color; g.fillRect(ex + 2, ey + 2, W - 4, H - 4); }
+    // under-construction overlay + progress
+    if (b.underConstruction()) {
+      g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(ex, ey, W, H);
+      const pct = Math.min(1, b.buildT / (b.built || 1));
+      g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
+      g.fillStyle = "#e8c840"; g.fillRect(ex + 1, ey - 6, (W - 2) * pct, 3);
+    }
+    // underpowered flash
+    if (b.underpowered && Math.floor(game.time * 2) % 2 === 0) {
+      g.fillStyle = "rgba(255,80,40,0.25)"; g.fillRect(ex, ey, W, H);
+    }
+    // production bar
+    if (b.queue.length) {
+      const cur = b.queue[0];
+      const pct = Math.min(1, b.queueTimer / ((cur._cfg && cur._cfg.time) || 1));
+      g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
+      g.fillStyle = "#8fd463"; g.fillRect(ex + 1, ey - 6, (W - 2) * pct, 3);
+    }
+    // capture bar
+    if (b.capByFac && b.capByFac !== b.fac && b.capHp < b.maxHp) {
+      const cp = Math.min(1, (b.maxHp - b.capHp) / Math.max(1, b.maxHp));
+      g.fillStyle = "#222"; g.fillRect(ex, ey - 13, W, 5);
+      g.fillStyle = FACTION_META[b.capByFac].accent; g.fillRect(ex + 1, ey - 12, (W - 2) * cp, 3);
+    }
+    // hp bar when damaged
+    if (b.hp < b.maxHp) {
+      g.fillStyle = "#111"; g.fillRect(ex + 3, ey + H - 5, W - 6, 3);
+      g.fillStyle = hpCol(b.hp / b.maxHp); g.fillRect(ex + 3, ey + H - 5, (W - 6) * (b.hp / b.maxHp), 3);
+    }
+  }
+  drawUnit(game, u) {
+    const g = this.g;
+    const img = SPRITES[unitSpriteKey(u.cfg)];
+    const fp = u.footprint() * 2;
+    if (img) {
+      // face movement direction
+      g.save();
+      g.translate(u.x, u.y);
+      const ang = u.moving || u.target ? Math.atan2((u.target ? u.target.y : (u.path && u.path[0] ? u.path[0].y : u.y)) - u.y, (u.target ? u.target.x : (u.path && u.path[0] ? u.path[0].x : u.x + 1)) - u.x) : (u._dir || 0);
+      if (u.isAir()) ang += Math.PI;
+      g.rotate(ang);
+      g.drawImage(img, -fp / 2 - 2, -fp / 2 - 2, fp + 4, fp + 4);
+      g.restore();
+    }
+    if (u.spawnTimer > 0) { g.globalAlpha = 0.5 + 0.5 * Math.sin(game.time * 20); }
+    // hp bar
+    if (u.hp < u.maxHp || u.selected) {
+      g.fillStyle = "#111"; g.fillRect(u.x - 10, u.y - fp / 2 - 6, 20, 3);
+      g.fillStyle = hpCol(u.hp / u.maxHp); g.fillRect(u.x - 10, u.y - fp / 2 - 6, 20 * (u.hp / u.maxHp), 3);
+    }
+    // fuel bar
+    if (u.maxT > 0 && u.t < u.maxT - 1) {
+      g.fillStyle = "#333"; g.fillRect(u.x - 10, u.y + fp / 2 + 2, 20, 2);
+      g.fillStyle = "#e8c840"; g.fillRect(u.x - 10, u.y + fp / 2 + 2, 20 * (u.t / u.maxT), 2);
+    }
+    g.globalAlpha = 1;
+  }
+  drawProjectile(p) {
+    const g = this.g;
+    const t = Math.hypot(p.tx - p.x, p.ty - p.y) || 1;
+    g.strokeStyle = p.cls === "air" ? "#9fd8ff" : p.cls === "def" ? "#ffd9a0" : "#ffe9a8";
+    g.lineWidth = p.cls === "tank" ? 2.4 : 1.6;
+    g.beginPath();
+    g.moveTo(p.x - (p.tx - p.x) / t * 6, p.y - (p.ty - p.y) / t * 6);
+    g.lineTo(p.x, p.y);
+    g.stroke();
+    g.fillStyle = "#fff2c0";
+    g.beginPath(); g.arc(p.x, p.y, 1.6, 0, 6.29); g.fill();
+  }
+  ring(e, col) {
+    const g = this.g;
+    g.strokeStyle = col; g.lineWidth = 1.4;
+    g.beginPath(); g.arc(e.x, e.y, e.footprint() + 3 + Math.sin(e.anim) * 0.001, 0, 6.29); g.stroke();
+  }
+  bRing(b, col) {
+    const g = this.g;
+    g.strokeStyle = col; g.lineWidth = 2;
+    g.strokeRect(b.tx * TILE + 1, b.ty * TILE + 1, b.w * TILE - 2, b.h * TILE - 2);
+  }
+  drawGhost(game) {
+    const gh = this.buildGhost;
+    if (!gh) return;
+    const cfg = BUILDINGS[gh.id];
+    if (!cfg) return;
+    const g = this.g;
+    const W = (cfg.w || 1) * TILE, H = (cfg.h || 1) * TILE;
+    const ex = gh.tx * TILE, ey = gh.ty * TILE;
+    // real sprite ghost
+    const img = SPRITES[bSpriteKey(game.player, cfg)];
+    g.globalAlpha = 0.55;
+    if (img) g.drawImage(img, ex, ey, W, H);
+    else { g.fillStyle = gh.ok ? "#7fd45f" : "#d45f5f"; g.fillRect(ex, ey, W, H); }
+    // tint overlay so validity reads at a glance
+    g.globalAlpha = 0.30;
+    g.fillStyle = gh.ok ? "#7fd45f" : "#d45f5f";
+    g.fillRect(ex, ey, W, H);
+    g.globalAlpha = 1;
+    g.strokeStyle = gh.ok ? "#bff5a0" : "#f5b0b0";
+    g.lineWidth = 1.5;
+    g.strokeRect(ex + 0.5, ey + 0.5, W - 1, H - 1);
+    // cost + name label above the ghost
+    const cost = cfg.cost;
+    const label = `${cfg.name}${cost ? "  " + Object.entries(cost).filter(([, v]) => v > 0).map(([k, v]) =>
+      v + (k === "tin" ? "◆" : k === "steel" ? "✚" : "⛽")).join(" ") : ""}`;
+    g.font = "11px monospace";
+    const tw = g.measureText(label).width;
+    const lx = Math.max(0, Math.min(this.cv.clientWidth / this.cam.zoom - 8, ex + W / 2));
+    const ly = Math.max(12, ey - 8);
+    g.fillStyle = "rgba(0,0,0,0.65)";
+    g.fillRect(lx - tw / 2 - 4, ly - 13, tw + 8, 15);
+    g.fillStyle = gh.ok ? "#d8f0c0" : "#f0d0d0";
+    g.textAlign = "center";
+    g.fillText(label, lx, ly - 1);
+    g.textAlign = "left";
+  }
+}
+function hpCol(p) { return p > 0.5 ? "#7fd45f" : p > 0.25 ? "#e8c840" : "#d45f5f"; }

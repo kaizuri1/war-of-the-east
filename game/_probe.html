@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>probe</title><link rel="stylesheet" href="css/game.css"></head>
+<body>
+<script type="module">
+const out = (k, v) => {
+  const line = k + " = " + (typeof v === "object" ? JSON.stringify(v) : v);
+  console.log(line);
+  const p = document.createElement("pre");
+  p.textContent = line;
+  p.style.cssText = "position:fixed;z-index:9999;color:white;background:#000";
+  document.body.appendChild(p);
+};
+const t0 = Date.now();
+try {
+  const sp = await import("./js/sprites.js");
+  await sp.loadArtOverrides();
+  out("overrides_loaded", Object.keys(sp.SPRITE_OVERRIDES).length);
+  sp.buildTiles(); sp.buildSprites();
+  out("sprites_built", Object.keys(sp.SPRITES).length);
+
+  const cfg = await import("./js/config.js");
+  const rand = await import("./js/rand.js");
+  const eng = await import("./js/engine.js");
+  const ent = await import("./js/entities.js");
+  const { Renderer } = await import("./js/renderer.js");
+  const { Input } = await import("./js/input.js");
+  const { UI } = await import("./js/ui.js");
+  const { AI } = await import("./js/ai.js");
+
+  const map = rand.generateMap({ w: cfg.MAP_W, h: cfg.MAP_H, seed: 20260924 });
+  const game = new eng.Game(map, { player: "china" });
+  game.setupBases();
+  out("boots", true);
+  out("buildings", game.buildings.length);
+
+  const cv = document.createElement("canvas");
+  cv.id = "view"; cv.width = 1280; cv.height = 720;
+  document.body.appendChild(cv);
+  const renderer = new Renderer(cv);
+  const ui = new UI(document.body, game, cv, null); // ctor wipes body; #view survives via keep/re-append
+  const input = new Input(cv, game, renderer, ui);
+  input.clampCam();
+  game.attach({ sfx: null, onWin: (w) => { out("onWin", w); ui.showOver(w); } });
+
+  // run 60 ticks of simulation
+  for (let i = 0; i < 60; i++) game.update(1 / 60);
+  out("after_ticks", { units: game.units.length, winner: game.winner });
+
+  // dump all buildings
+  out("ALL_BUILDINGS", game.buildings.map((b) => ({ fac: b.fac, id: b.cfg?.id, dead: b.dead, hp: Math.round(b.hp), alive: b.isAlive() })));
+  // kill all Japan buildings -> Japan should lose
+  try {
+    // find jp depot explicitly and kill it via game.kill
+    const dep = game.buildings.find((b) => b.fac === "japan" && b.cfg?.id === "depot");
+    out("depot_found", !!dep);
+    if (dep) {
+      const origKill = game.kill.bind(game);
+      game.kill = (e, isB) => {
+        out("KILL_CALLED", e.cfg?.id + " isB=" + isB);
+        out("B4", { len: game.buildings.length, depDead: dep.dead, depAlive: dep.isAlive(), cfgId: dep.cfg?.id });
+        const arr = game.buildings, filt = arr.filter((x) => x !== dep);
+        out("FILT", { len: arr.length, filt: filt.length, sameRef: filt === arr, strictOK: dep !== dep ? "neq-self" : Array.isArray(arr) ? "array" : typeof arr });
+        origKill(e, isB);
+        out("AFTER_ORIG", { len: game.buildings.length, incl: game.buildings.includes(dep), winner: game.winner });
+        out("KILL_DONE", { list: game.buildings.length, winner: game.winner });
+      };
+      dep.takeDamage(99999, game);
+      out("after_dep_kill", { dead: dep.dead, hp: dep.hp, list: game.buildings.length, winner: game.winner, in_list: game.buildings.includes(dep) });
+      if (!dep.dead) {
+        game.kill(dep, true);
+        out("after_manual_kill", { dead: dep.dead, list: game.buildings.length, winner: game.winner });
+      }
+    }
+  } catch (err) { out("KILL_ERR", err.message + " | " + (err.stack || "").split("\n")[1]); }
+  out("after_jp_killed", { winner: game.winner, total: game.buildings.length });
+
+  // check game-over banner in DOM
+  const over = document.querySelector("#over");
+  out("over_in_dom", { present: !!over, hidden: over ? over.classList.contains("hidden") : null });
+  out("over_title", over ? over.querySelector(".over-title").textContent : null);
+  // DEFEAT test: fresh game, kill CHINA depot first
+  try {
+    const map2 = rand.generateMap({ w: cfg.MAP_W, h: cfg.MAP_H, seed: 20260924 });
+    const g2 = new eng.Game(map2, { player: "china" });
+    g2.setupBases();
+    g2.attach({ sfx: null, onWin: (w) => { out("g2_onWin", w); } });
+    const dep2 = g2.buildings.find((b) => b.fac === "china" && b.cfg?.id === "depot");
+    out("cn_dep_kill", dep2 ? "killed" : "missing");
+    if (dep2) dep2.takeDamage(99999, g2);
+    out("g2_winner", g2.winner);
+  } catch (err) { out("CN_ERR", err.message); }
+  out("probes", "DONE");
+} catch (e) {
+  out("ERROR", e.message + " @ " + (e.stack || "").split("\n").slice(1, 3).join(" | "));
+}
+</script>
+</body>
+</html>

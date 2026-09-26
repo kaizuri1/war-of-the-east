@@ -1,0 +1,369 @@
+// WAR OF THE EAST — ui.js
+// C&C-style HUD:
+//   • top resource strip (time / tin / steel / fuel / power / army)
+//   • RIGHT-side vertical COMMAND PANEL with tabs:
+//        INFANTRY · VEHICLES · RESEARCH · BUILDINGS
+//   • bottom-left minimap + selection/status panel
+// Talks to the real engine:
+//   fac state  : game.fac[game.player] = { res{tin,steel,fuel}, power{gen,draw,ok},
+//                upgrades:Set }
+//   commands   : game.canBuild, game.startBuild, game.queueUnit,
+//                game.canResearch, game.research, game.unitAvailable,
+//                game.hasLab, game.tierNum, game.canAfford
+//   selection  : game.units[].selected / game.buildings[].selected
+//   camera     : r.cam {x,y,zoom}, canvas css size -> minimap viewport
+/* global document, window */
+import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META } from "./config.js";
+import { T } from "./rand.js";
+import { unitSpriteKey, bSpriteKey, SPRITES } from "./sprites.js";
+
+// unit class -> the factory `produces` value that can build it
+const CLASS_PROD = { infantry: "infantry", tank: "armor", gun: "guns", air: "air" };
+
+export class UI {
+  constructor(root, game, canvas, input) {
+    this.root = root;
+    this.g = game;
+    this.cv = canvas;
+    this.r = canvas.__renderer || null; // renderer set from main.js
+    this.in = input;
+    this.input = input;          // alias for convenience
+    this.tab = "BUILDINGS";
+    this._th = new Map();       // id -> data-url thumbnail
+    this._buildId = null;
+
+    // NOTE: root hosts the main game canvas (#view). Wiping innerHTML removes
+    // it, so the renderer would draw to a detached canvas -> black screen.
+    // Re-append the canvas after the wipe.
+    const keep = root.querySelector("#view") || this.cv;
+
+    root.innerHTML = `
+      <div id="res"></div>
+      <div id="hud-match"></div>
+      <div id="command">
+        <div id="cmdTabs"></div>
+        <div id="cmdBody" class="cmd-scroll"></div>
+      </div>
+      <div id="hud-bottom">
+        <div id="mmwrap">
+          <canvas id="minimap" width="180" height="180"></canvas>
+        </div>
+        <div id="sel"></div>
+      </div>
+      <div id="over" class="hidden">
+        <div class="over-card">
+          <div class="over-title"></div>
+          <div class="over-sub"></div>
+          <button class="overbtn" id="overRestart">RESTART — ENTER</button>
+        </div>
+      </div>`;
+
+    if (keep) root.appendChild(keep); // restore the game canvas (was wiped above)
+
+    const match = root.querySelector("#hud-match");
+    if (match) match.textContent =
+      `${game.playerName} vs ${game.aiName} · ${game.map.name || "field"}` +
+      (game.diff ? ` · AI ${game.diff.label}` : "");
+
+    this.mm = root.querySelector("#minimap");
+    this.mctx = this.mm.getContext("2d");
+    this.buildTabs();
+    this.bindBody();
+    this.refresh();
+  }
+  attachRenderer(r) { this.r = r; }
+  attachSfx() { this._sfx = this.g._sfx; }
+  // keep input.buildItem in sync with what the cards highlight
+  setBuildActive(id) { this._buildId = id; if (this.input) this.input.buildItem = id; }
+
+  // ---- tabs -------------------------------------------------------------
+  buildTabs() {
+    const tabs = [
+      ["BUILDINGS", "B", "Building Production"],
+      ["INFANTRY", "I", "Infantry & crews"],
+      ["VEHICLES", "V", "Tanks, guns, aircraft"],
+      ["RESEARCH", "R", "Upgrades (needs Lab)"],
+    ];
+    const el = this.root.querySelector("#cmdTabs");
+    el.innerHTML = tabs.map(([id, k, tip]) =>
+      `<div class="cmd-tab" data-tab="${id}" title="${tip}"><span class="ct-label">${id}</span><kbd>${k}</kbd></div>`
+    ).join("");
+    el.addEventListener("click", (e) => {
+      const t = e.target.closest(".cmd-tab");
+      if (!t) return;
+      this.tab = t.dataset.tab;
+      this.beep("click"); this.refresh();
+    });
+    // hotkeys B/I/V/R
+    window.addEventListener("keydown", (e) => {
+      if (this.g && !this.g.winner && !e.ctrlKey && !e.altKey && !e.metaKey && document.activeElement.tagName !== "INPUT") {
+        const map = { b: "BUILDINGS", i: "INFANTRY", v: "VEHICLES", r: "RESEARCH" };
+        const k = e.key.toLowerCase();
+        if (map[k] && map[k] !== this.tab) { this.tab = map[k]; this.beep("click"); this.refresh(); }
+      }
+    });
+  }
+  bindBody() {
+    const body = this.root.querySelector("#cmdBody");
+    body.addEventListener("click", (e) => {
+      const it = e.target.closest(".card");
+      if (!it) return;
+      this.onCard(it.dataset.kind, it.dataset.id);
+    });
+    // selection panel: pop-queue button
+    this.root.querySelector("#sel").addEventListener("click", (e) => {
+      if (e.target.closest("[data-queue]")) this.popQueue();
+    });
+  }
+  onCard(kind, id) {
+    const g = this.g;
+    if (g.winner) return;
+    if (kind === "building") {
+      this.onBuild(id);
+    } else if (kind === "unit") {
+      this.onQueueUnit(id);
+    } else if (kind === "research") {
+      if (g.research(g.player, id)) this.beep("research");
+      else this.beep("error");
+    }
+    this.refresh();
+  }
+  fac() { const f = this.g.fac[this.g.player]; return f; }
+  owned(id) {
+    const g = this.g;
+    return g.buildings.some((b) => !b.dead && b.isAlive() && b.fac === g.player && b.cfg.id === id);
+  }
+  anyFactoryFor(produces) {
+    // prefer the selected factory, then the one with the least queue
+    const g = this.g;
+    const cands = g.buildings.filter((b) =>
+      !b.dead && b.isAlive() && !b.underConstruction() && b.fac === g.player &&
+      b.cfg && b.cfg.slots > 0 && b.cfg.produces === produces);
+    const sel = cands.find((b) => b.selected);
+    const pool = sel ? cands.filter((b) => b === sel || b.queue.length === 0) : cands;
+    if (!pool.length) return null;
+    pool.sort((a, b) => a.queue.length - b.queue.length);
+    return pool[0];
+  }
+  onBuild(id) {
+    const g = this.g, b = BUILDINGS[id];
+    if (!b || id === "depot") return;
+    if (b.cost && !g.canAfford(g.player, b.cost)) { this.beep("error"); return; }
+    if (this._buildId === id) { this._buildId = null; if (this.in) this.in.setBuild(null); return; }
+    this._buildId = id;
+    if (this.in) this.in.setBuild(id);
+    this.beep("click");
+  }
+  onQueueUnit(id) {
+    const g = this.g, u = UNITS[id];
+    if (!u) return;
+    const fac = g.player;
+    if (u.needsTier && g.tierNum(fac) < u.needsTier) { this.beep("error"); return; }
+    const f = g.fac[fac];
+    if (!f.res.tin || g.fac[fac].res.tin < (u.cost.tin || 0)) { this.beep("error"); return; }
+    const fab = this.anyFactoryFor(CLASS_PROD[u.class]);
+    if (!fab) { this.beep("error"); setStatus("Need a completed factory (" + (CLASS_PROD[u.class]) + ").", 2.5); return; }
+    if (g.queueUnit(fab, id)) this.beep("spawn");
+    else this.beep("error");
+  }
+  popQueue() {
+    const g = this.g;
+    const b = g.buildings.find((x) => x.selected && !x.dead && x.isAlive());
+    if (b && b.queue.length) { b.queue.shift(); b.queueTimer = 0; }
+  }
+
+  // ---- thumbnails -------------------------------------------------------
+  thumb(kind, id) {
+    if (this._th.has(kind + ":" + id)) return this._th.get(kind + ":" + id);
+    let url = "";
+    try {
+      const g = this.g;
+      const src = kind === "building" ? SPRITES[bSpriteKey(g.player, BUILDINGS[id])] : SPRITES[unitSpriteKey(UNITS[id])];
+      if (src) {
+        const c = document.createElement("canvas"); c.width = 40; c.height = 40;
+        c.getContext("2d").drawImage(src, 0, 0, 40, 40);
+        url = c.toDataURL();
+      }
+    } catch (e) { url = ""; }
+    this._th.set(kind + ":" + id, url);
+    return url;
+  }
+
+  // ---- card builders ----------------------------------------------------
+  costStr(cost) {
+    if (!cost) return "";
+    return [cost.tin, cost.steel, cost.fuel].filter((v) => v > 0)
+      .map((v, i) => v + (i === 0 ? " ◆" : i === 1 ? " ✚" : " ⛽")).join(" ");
+  }
+  buildingCard(id) {
+    const g = this.g, c = BUILDINGS[id], fac = g.player;
+    if (id === "depot") return "";
+    const affordable = g.canAfford(fac, c.cost);
+    const active = this._buildId === id;
+    const meta = [
+      c.produces ? "produces " + c.produces : (c.power > 0 ? "+" + c.power + "⚡ power" : (c.power < 0 ? c.power + "⚡ draw" : "fortification")),
+      c.slots ? c.slots + "-slot" : "",
+    ].filter(Boolean).join(" · ");
+    return `<div class="card ${affordable ? "" : "off"} ${active ? "active" : ""}" data-kind="building" data-id="${id}">
+      <div class="thumb">${this.thumb("building", id) ? `<img src="${this.thumb("building", id)}">` : `<span>${initials(c.name)}</span>`}</div>
+      <div class="cbody"><div class="nm">${c.name}</div>
+        <div class="meta">${meta}</div></div>
+      <div class="cost">${this.costStr(c.cost)}</div>
+    </div>`;
+  }
+  unitCard(id) {
+    const g = this.g, c = UNITS[id], fac = g.player, f = g.fac[fac];
+    if (!c) return "";
+    const locked = c.needsTier && g.tierNum(fac) < c.needsTier;
+    const affordable = !locked && g.canAfford(fac, c.cost) && g.unitAvailable(fac, id);
+    const cls = { infantry: "inf", tank: "veh", gun: "veh", air: "air" }[c.class];
+    const fab = this.anyFactoryFor(CLASS_PROD[c.class]);
+    return `<div class="card ${affordable ? "" : "off"}" data-kind="unit" data-id="${id}">
+      <div class="thumb ${cls}">${this.thumb("unit", id) ? `<img src="${this.thumb("unit", id)}">` : `<span>${initials(c.name)}</span>`}</div>
+      <div class="cbody"><div class="nm">${c.name}${locked ? `<span class="lock">T${c.needsTier}</span>` : ""}</div>
+        <div class="meta">hp ${c.hp} · dmg ${c.dmg}${fab ? "" : `<em class="no">no factory</em>`}</div></div>
+      <div class="cost">${this.costStr(c.cost)}</div>
+    </div>`;
+  }
+  researchCard(up) {
+    const g = this.g, fac = g.player, f = g.fac[fac];
+    const done = f.upgrades.has(up.id);
+    const hasLab = g.hasLab(fac);
+    const affordable = !done && hasLab && f.res.tin >= (up.cost || 0);
+    return `<div class="card ${done ? "done" : affordable ? "" : "off"}" data-kind="research" data-id="${up.id}">
+      <div class="thumb rs"><span>T${up.tier}</span></div>
+      <div class="cbody"><div class="nm">${up.name}</div>
+        <div class="meta">${done ? "researched ✓" : hasLab ? "T" + up.tier + " upgrade" : "needs Upgrades Lab"}</div></div>
+      <div class="cost">${up.cost ? up.cost + " ◆" : ""}</div>
+    </div>`;
+  }
+
+  // ---- refresh ----------------------------------------------------------
+  refresh() {
+    this.refreshRes();
+    const g = this.g;
+    this.root.querySelectorAll(".cmd-tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === this.tab));
+    const body = this.root.querySelector("#cmdBody");
+    let html = "";
+    if (this.tab === "BUILDINGS") html = Object.keys(BUILDINGS).filter((k) => k !== "depot").map((id) => this.buildingCard(id)).join("") || `<div class="dim">No buildings.</div>`;
+    else if (this.tab === "INFANTRY") html = Object.values(UNITS).filter((u) => u.fac === g.player && u.class === "infantry").map((u) => this.unitCard(u.id)).join("") || `<div class="dim">No infantry.</div>`;
+    else if (this.tab === "VEHICLES") html = Object.values(UNITS).filter((u) => u.fac === g.player && (u.class === "tank" || u.class === "gun" || u.class === "air")).map((u) => this.unitCard(u.id)).join("") || `<div class="dim">No vehicles.</div>`;
+    else if (this.tab === "RESEARCH") html = UPGRADES.map((up) => this.researchCard(up)).join("") || `<div class="dim">No upgrades.</div>`;
+    body.innerHTML = html;
+  }
+  refreshRes() {
+    const g = this.g, f = g.fac[g.player];
+    const r = f.res, p = f.power;
+    const army = g.units.filter((u) => u.fac === g.player && !u.dead && u.isAlive()).length;
+    const el = this.root.querySelector("#res");
+    const pw = p.ok ? "ok" : "low";
+    el.innerHTML =
+      `<span class="ri">⏱ <b>${fmtTime(g.time)}</b></span>` +
+      `<span class="ri" title="Tin / metal">◆ <b>${(r.tin | 0)}</b></span>` +
+      `<span class="ri" title="Steel / ore">✚ <b>${(r.steel | 0)}</b></span>` +
+      `<span class="ri" title="Fuel / oil">⛽ <b>${(r.fuel | 0)}</b></span>` +
+      `<span class="ri ${pw}" title="Power used / generated">⚡ <b>${(p.draw | 0)}/${(p.gen | 0)}</b></span>` +
+      `<span class="ri" title="Units on field">🪖 <b>${army}</b></span>` +
+      (g.paused ? `<span class="ri paused">⏸ PAUSED</span>` : "") +
+      (g.winner ? `<span class="ri over">— ${g.winner === g.player ? "VICTORY" : "DEFEAT"} —</span>` : "");
+  }
+
+  // Game-over banner: shown when the depot is lost/captured; Enter restarts.
+  showOver(winner) {
+    const g = this.g;
+    const win = winner === g.player;
+    const ov = this.root.querySelector("#over");
+    ov.querySelector(".over-title").textContent = win ? "VICTORY — 大捷" : "DEFEAT — 敗北";
+    ov.querySelector(".over-title").className = "over-title " + (win ? "win" : "lose");
+    ov.querySelector(".over-sub").textContent = win
+      ? `The enemy depot has fallen. ${g.playerName} holds the East.`
+      : `Your depot has fallen. ${g.aiName} takes the East.`;
+    ov.classList.remove("hidden");
+    if (!this._overBound) {
+      this._overBound = true;
+      const restart = () => location.reload();
+      ov.querySelector("#overRestart").addEventListener("click", restart);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && g.winner) restart();
+      });
+    }
+  }  // engine already played "win" at the winning moment
+  // Per-frame lightweight update (resources, selection, minimap, build grid)
+  uiTick(dt) {
+    const g = this.g;
+    g._uiAcc = (g._uiAcc || 0) + dt;
+    if (g._uiAcc < 0.15) return;      // throttle full DOM to ~6fps
+    g._uiAcc = 0;
+    this.refreshRes();
+    this.refreshSel();
+    this.drawMinimap();
+    // keep card affordability / tier-unlocks / research state live (1s cadence)
+    g._gridAcc = (g._gridAcc || 0) + 0.15;
+    if (g._gridAcc >= 1) { g._gridAcc = 0; this.refresh(); }
+  }
+  refreshSel() {
+    const g = this.g;
+    const su = g.units.filter((u) => u.selected && !u.dead && u.isAlive());
+    const sb = g.buildings.filter((b) => b.selected && !b.dead && b.isAlive());
+    const el = this.root.querySelector("#sel");
+    let h = "";
+    if (su.length) {
+      const c = su[0].cfg;
+      const hp = Math.round(su.reduce((a, u) => a + u.hp, 0) / su.length);
+      h = `<div class="selhead"><span>${c.name}${su.length > 1 ? " ×" + su.length : ""}</span><span class="tag">${c.class}</span></div>
+          <div class="selrow">avg hp ${hp}/${c.hp}</div>
+          <div class="selrow dim">dmg ${c.dmg} · range ${Math.round(c.range)} · sp ${c.speed}</div>
+          <div class="selhint">RMB move · RMB+enemy attack · CTR+1..5 group</div>`;
+    } else if (sb.length) {
+      const b = sb[0], q = b.queue || [];
+      h = `<div class="selhead"><span>${b.cfg.name}</span><span class="tag">${b.cfg.produces || "building"}</span></div>
+          <div class="selrow">hp ${Math.round(b.hp)}/${b.maxHp}${b.underConstruction() ? " · under construction" : ""}${b.underpowered ? " · ⚠ NO POWER" : ""}</div>
+          ${b.cfg.slots ? `<div class="selrow">queue ${q.length}/${b.cfg.slots}${q.length ? " · " + q.map((x) => UNITS[x]?.name || x).join(", ") : " · empty"}</div>
+          <button class="selbtn" data-queue>✕ POP QUEUE</button>` : ""}`;
+    } else {
+      h = `<div class="selhint">Left drag = select · RMB = move/attack<br>Cmd bar: <b>B</b>uildings <b>I</b>nfantry <b>V</b>ehicles <b>R</b>esearch<br>Space = pause · Esc = cancel build</div>`;
+    }
+    if (el._h !== h) { el.innerHTML = h; el._h = h; }
+  }
+
+  drawMinimap() {
+    const g = this.g, m = this.mctx, W = MAP_W, H = MAP_H;
+    const cw = this.mm.width, ch = this.mm.height;
+    const sx = cw / W, sy = ch / H;
+    // terrain (downsample 2 tiles per pixel-ish)
+    m.fillStyle = "#20301a"; m.fillRect(0, 0, cw, ch);
+    const ts = g.map.tiles || [];
+    const step = 2;
+    for (let ty = 0; ty < H; ty += step) for (let tx = 0; tx < W; tx += step) {
+      const t = ts[ty * W + tx] || 0;
+      if (t === T.ORE) m.fillStyle = "#6b5a3a";
+      else if (t === T.OIL) m.fillStyle = "#2a2018";
+      else if (t === T.ROCK) m.fillStyle = "#3a3a3a";
+      else if (t === T.TREE) m.fillStyle = "#1c3315";
+      else m.fillStyle = "#24361c";
+      m.fillRect(tx * sx, ty * sy, sx * step, sy * step);
+    }
+    // buildings
+    for (const b of g.buildings) { if (b.dead) continue; m.fillStyle = b.fac === g.player ? "#3fd66f" : "#f0603a"; m.fillRect(b.tx * sx, b.ty * sy, b.w * sx + 1, b.h * sy + 1); }
+    // units (positions are pixels -> divide by TILE for tile space)
+    for (const u of g.units) { if (u.dead || !u.isAlive()) continue; m.fillStyle = u.fac === g.player ? "#8dffae" : "#ffcf6a"; m.fillRect(u.x / TILE * sx - 1, u.y / TILE * sy - 1, 2, 2); }
+    // camera viewport rectangle
+    if (this.r) {
+      const vw = this.cv.clientWidth / this.r.cam.zoom, vh = this.cv.clientHeight / this.r.cam.zoom;
+      const x = this.r.cam.x / TILE * sx, y = this.r.cam.y / TILE * sy;
+      m.strokeStyle = "#ffffff"; m.lineWidth = 1;
+      m.strokeRect(x, y, (vw / TILE) * sx, (vh / TILE) * sy);
+    }
+  }
+
+  // legacy compat (input.js / main.js may call)
+  selectInfo() {} 
+  beep(t) { if (this._sfx) this._sfx(t); }
+}
+
+export function fmtTime(t) {
+  t = Math.max(0, Math.floor(t));
+  return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+}
+function initials(name) { return name.split(/\s+/).map((s) => s[0]).slice(0, 2).join("").toUpperCase(); }
+function setStatus(msg, s) { /* status surfaced via selection panel is enough */ void s; void msg; }

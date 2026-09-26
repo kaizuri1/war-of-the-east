@@ -1,0 +1,87 @@
+### FILE SIZES (definitive)
+  js\ai.js  7714
+  js\config.js  15735
+  js\config.js.before-menu-20260924  15735
+  js\engine.js  16936
+  js\engine.js.before-menu-20260924  16936
+  js\entities.js  14759
+  js\final_dump.txt  13292
+  js\input.js  10829
+  js\input.js.before-menu-20260924  10829
+  js\main.js  7330
+  js\main.js.before-menu-20260924  7330
+  js\menu.js  13851
+  js\menu.js.before-menu-20260924  13851
+  js\rand.js  4208
+  js\renderer.js  8586
+  js\renderer.js.before-menu-20260924  8586
+  js\sprites.js  14997
+  js\ui.js  17498
+  js\ui.js.before-menu-20260924  17498
+  index.html  473
+  css/game.css  6875
+NO
+### config label? YES
+### engine nameEN refs: 2
+### engine label refs: 2
+### engine opts.res refs: 3  resMult: 3
+### menu len=13851 lines=362
+menu generateTileSheet ctx:
+   _META, RES_TIERS, AI_DIFF, TUNE). || import { MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE } from "./config.js"; || import { generateMap } from "./rand.js"; || import { generateTileSheet } from "./sprites.js"; ||  || const STORE = "woe-settings"; ||  || // Live settings — read by main.js / ui.js; persisted to localStorage. || export const MEN
+menu onStart ctx:
+   et sfx = null;                 // set via setSfx() after the sound system is built || let handlers = null;            // { onStart(sel), onQuit() } || let started = false;            // true once the player chose START BATTLE || const beep = (f0, f1
+menu sfx.beep ctx:
+   last: once the player chose START BATTLE || const beep = (f0, f1, d, type = "square", vol = 0.025) => sfx && sfx.beep(f0, f1, d, type, vol); ||  || function loadSettings() { ||   try { ||     const j =
+menu TUNE.shake ctx:
+   first shake: onst MENU = { ||   S: { ||     musicMuted: false, ||     sfxVol: 1, ||     musicVol: 1, ||     shake: TUNE.shake, ||     showGrid: false, ||     camX: null, camY: null, ||   }, || }; ||  || let sfx = null;                 // set via 
+menu handler calls (handlers.):
+   handlers.onStart(sel);
+menu FACTION_META usage:
+   // Ground truth: config.js (MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE).
+   import { MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE } from "./config.js";
+   b.textContent = v.label;
+   `${FACTION_META[f].nameEN} vs ${FACTION_META[ai].nameEN} — ${m.name} — ` +
+   `funds ${r.toUpperCase()} — AI ${AI_DIFF[d].label}`;
+   const facValues = Object.keys(FACTION_META).map((k) => ({ id: k, label: FACTION_META[k].nameEN }));
+### input.js L1-40
+1| // WAR OF THE EAST — input.js
+2| // Mouse: LMB select/box, RMB move / attack-move / place building, MMB pan, wheel zoom.
+3| // Keys: WASD/edge-pan, Space pause, Esc cancel build, Ctrl/Shift+1..5 control groups.
+4| // Coordinates are CSS pixels relative to the canvas; renderer does dpr/zoom transform.
+5| import { TILE, BUILDINGS } from "./config.js";
+6| 
+7| export class Input {
+8|   constructor(canvas, game, renderer, ui) {
+9|     this.cv = canvas; this.game = game; this.r = renderer; this.ui = ui;
+10|     this.drag = null;          // box select in progress
+11|     this.dragSel = null;       // box rect (screen px) for renderer
+12|     this.panDrag = null;       // last mouse pos while panning
+13|     this.edges = { l: false, r: false, t: false, b: false };
+14|     this.buildItem = null;     // building id being placed
+15|     this.mouse = { wx: 0, wy: 0, over: false };
+16|     this._s = false;
+17| 
+18|     canvas.addEventListener("mousemove", (e) => this.onMove(e));
+19|     canvas.addEventListener("mousedown", (e) => this.onDown(e));
+20|     canvas.addEventListener("mouseup", (e) => this.onUp(e));
+21|     canvas.addEventListener("mouseleave", () => { this.mouse.over = false; });
+22|     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+23|     canvas.addEventListener("wheel", (e) => {
+24|       e.preventDefault();
+25|       const rc = this.cv.getBoundingClientRect();
+26|       const nz = Math.max(0.5, Math.min(2.5, this.r.cam.zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+27|       this.zoomAt(e.clientX - rc.left, e.clientY - rc.top, nz);
+28|     }, { passive: false });
+29|     window.addEventListener("keydown", (e) => { this._s = e.shiftKey; this.onKey(e, true); });
+30|     window.addEventListener("keyup", (e) => { this._s = e.shiftKey; this.onKey(e, false); });
+31|   }
+32| 
+33|   screenToWorld(mx, my) {
+34|     const c = this.r.cam;
+35|     return { x: mx / c.zoom + c.x, y: my / c.zoom + c.y };
+36|   }
+37|   zoomAt(sx, sy, nz) {
+38|     const c = this.r.cam;
+39|     const wx = sx / c.zoom + c.x, wy = sy / c.zoom + c.y;
+40|     c.zoom = nz;
+### input.js F1 ctx

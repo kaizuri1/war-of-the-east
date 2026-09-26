@@ -1,0 +1,572 @@
+== MENU.js FULL len 13851 ==
+// WAR OF THE EAST — menu.js
+// Title screen (MAIN MENU: SKIRMISH / MISSION(greyed) / SETTINGS) + skirmish setup.
+// The game does NOT auto-start: bootMenu() shows the title and waits for the
+// player to press START BATTLE. MISSION stays disabled until campaign data ships.
+// Ground truth: config.js (MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE).
+import { MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE } from "./config.js";
+import { generateMap } from "./rand.js";
+import { generateTileSheet } from "./sprites.js";
+
+const STORE = "woe-settings";
+
+// Live settings — read by main.js / ui.js; persisted to localStorage.
+export const MENU = {
+  S: {
+    musicMuted: false,
+    sfxVol: 1,
+    musicVol: 1,
+    shake: TUNE.shake,
+    showGrid: false,
+    camX: null, camY: null,
+  },
+};
+
+let sfx = null;                 // set via setSfx() after the sound system is built
+let handlers = null;            // { onStart(sel), onQuit() }
+let started = false;            // true once the player chose START BATTLE
+const beep = (f0, f1, d, type = "square", vol = 0.025) => sfx && sfx.beep(f0, f1, d, type, vol);
+
+function loadSettings() {
+  try {
+    const j = JSON.parse(localStorage.getItem(STORE) || "{}");
+    Object.assign(MENU.S, j);
+    if (typeof MENU.S.camX !== "number") MENU.S.camX = null;
+  } catch { /* first run */ }
+}
+function saveSettings() {
+  try { localStorage.setItem(STORE, JSON.stringify(MENU.S)); } catch { /* private mode */ }
+}
+
+function segRow(container, values, selected, cb) {
+  const r = document.createElement("div");
+  r.className = "menu-seg";
+  for (const v of values) {
+    const b = document.createElement("button");
+    b.textContent = v.label;
+    b.dataset.v = v.id;
+    if (v.id === selected) b.classList.add("on");
+    b.addEventListener("click", () => {
+      for (const x of r.children) x.classList.remove("on");
+      b.classList.add("on");
+      beep(360, 460, 0.03, "sine", 0.02);
+      cb(v.id);
+      syncSummary();
+    });
+    r.appendChild(b);
+  }
+  container.appendChild(r);
+  return r;
+}
+
+function mapThumb(cv, mapDef) {
+  // Miniature preview rendered from the same seeded map — cheap (tiny tiles).
+  const m = generateMap({ w: mapDef.w, h: mapDef.h, seed: mapDef.seed, scatter: 0.18, edges: 5 });
+  const TW = Math.max(1, Math.round(mapDef.w / 45)), TH = Math.max(1, Math.round(mapDef.h / 45));
+  const s = generateTileSheet(m.tiles, TW, TH);
+  const ctx = cv.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(s, m.sx, m.sy, (TW * 2 + 2), (TH * 2 + 2), 0, 0, cv.width, cv.height);
+}
+
+function toggleRow(parent, label, get, set) {
+  const row = document.createElement("div");
+  row.className = "menu-row";
+  const lab = document.createElement("span");
+  lab.textContent = label;
+  row.appendChild(lab);
+  const y = document.createElement("div");
+  y.className = "menu-y menu-seg";
+  for (const val of [true, false]) {
+    const b = document.createElement("button");
+    b.textContent = val ? "ON" : "OFF";
+    if (get() === val) b.classList.add("on");
+    b.addEventListener("click", () => {
+      for (const x of y.children) x.classList.remove("on");
+      b.classList.add("on");
+      set(val);
+      beep(360, 440, 0.03, "sine", 0.02);
+    });
+    y.appendChild(b);
+  }
+  row.appendChild(y);
+  parent.appendChild(row);
+}
+
+const summary = () => document.querySelector("#sk-summary");
+function syncSummary() {
+  const el = summary();
+  if (!el) return;
+  const f = document.querySelector("#sk-fac .on")?.dataset.v || "china";
+  const ai = document.querySelector("#sk-ai .on")?.dataset.v || "japan";
+  const r = document.querySelector("#sk-res .on")?.dataset.v || "medium";
+  const d = document.querySelector("#sk-diff .on")?.dataset.v || "medium";
+  const map = document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id;
+  const m = MAPS.find((x) => x.id === map) || MAPS[0];
+  el.textContent =
+    `${FACTION_META[f].nameEN} vs ${FACTION_META[ai].nameEN} — ${m.name} — ` +
+    `funds ${r.toUpperCase()} — AI ${AI_DIFF[d].label}`;
+}
+
+function markAiWarning() {
+  const mine = document.querySelector("#sk-fac .on")?.dataset.v;
+  document.querySelector("#sk-ai .on")?.classList.toggle("warn", mine && mine === document.querySelector("#sk-ai .on").dataset.v);
+}
+
+// ================================================================
+export function bootMenu(h) {
+  handlers = h;
+  loadSettings();
+  TUNE.shake = MENU.S.shake;          // apply saved preferences
+  sfx && applySfx();
+
+  if (!document.querySelector("#menu h1")) {
+    const root = document.querySelector("#menu");
+    root.innerHTML = `
+      <div class="menu-screen" id="ms-title">
+        <div class="title-top">
+          <div id="title-deco"></div>
+          <h1 class="title-main">WAR OF THE EAST</h1>
+          <div class="title-sub">東洋戦争 · 1937–1945</div>
+          <div class="title-tag">A Command &amp; Conquer-style browser RTS</div>
+        </div>
+        <div id="title-menu">
+          <button class="menu-item on" id="mi-skmish">SKIRMISH</button>
+          <button class="menu-item" id="mi-mission" title="Mission mode arrives with a campaign data pack — greyed out for now.">
+            MISSION <span class="soon">SOON</span></button>
+          <button class="menu-item" id="mi-settings">SETTINGS</button>
+        </div>
+        <div class="title-foot">v1.0 · skirmish · in-game: F1–F3 speed · Esc menu · Enter restart</div>
+      </div>
+      <div class="menu-screen" id="ms-skirmish" hidden></div>
+      <div class="menu-screen" id="ms-settings" hidden></div>`;
+    document.querySelector("#mi-skmish").addEventListener("click", () => { beep(340, 520, 0.04, "triangle"); show(1); });
+    document.querySelector("#mi-settings").addEventListener("click", () => { beep(340, 520, 0.04, "triangle"); show(2); });
+  }
+  window.addEventListener("keydown", onMenuKey);
+}
+
+function show(i) {
+  const scr = (id) => document.getElementById(id);
+  scr("ms-title").hidden = i !== 0;
+  if (i === 1) buildSkirmish();
+  if (i === 2) buildSettings();
+  scr("ms-skirmish").hidden = i !== 1;
+  scr("ms-settings").hidden = i !== 2;
+  if (i === 1) { syncSummary(); markAiWarning(); }
+  if (i === 2) refreshCamLabel();
+  window.scrollTo(0, 0);
+}
+
+function onMenuKey(e) {
+  if (started) return;
+  if (e.key === "Escape" &&
+      (!document.getElementById("ms-skirmish").hidden || !document.getElementById("ms-settings").hidden)) {
+    beep(500, 320, 0.05, "triangle");
+    show(0);
+  }
+}
+
+// ================================================================
+function buildSkirmish() {
+  const el = document.getElementById("ms-skirmish");
+  if (el.dataset.built) return;
+  el.dataset.built = "1";
+  el.innerHTML = `
+    <div class="menu-head">
+      <button class="menu-back" id="sk-back">&larr; MAIN MENU</button>
+      <h2>SKIRMISH</h2>
+      <div class="menu-spacer"></div>
+    </div>
+    <div class="menu-grid">
+      <div class="menu-box">
+        <h3>BATTLEFIELD</h3>
+        <div class="menu-hint">seeded — the same map always looks the same</div>
+        <div id="sk-maps" class="menu-maplist"></div>
+      </div>
+      <div class="menu-box">
+        <h3>YOUR FACTION</h3>
+        <div id="sk-fac" class="menu-facs"></div>
+        <h3 class="mt2">ENEMY AI FACTION</h3>
+        <div class="menu-hint">one computer opponent controls this faction</div>
+        <div id="sk-ai" class="menu-facs"></div>
+      </div>
+      <div class="menu-box">
+        <h3>STARTING FUNDS</h3>
+        <div id="sk-res"></div>
+        <div id="sk-resinfo" class="menu-info"></div>
+        <h3 class="mt2">AI DIFFICULTY</h3>
+        <div id="sk-diff"></div>
+        <div id="sk-diffinfo" class="menu-info"></div>
+      </div>
+    </div>
+    <div id="sk-summary" class="menu-summary"></div>
+    <div class="menu-foot">
+      <button class="menu-start" id="sk-start">&#9654; START BATTLE</button>
+    </div>`;
+
+  // --- map picker ---
+  const mapsEl = document.getElementById("sk-maps");
+  MAPS.forEach((m, i) => {
+    const c = document.createElement("div");
+    c.className = "menu-map" + (i === 0 ? " on" : "");
+    c.dataset.v = m.id;
+    const cv = document.createElement("canvas");
+    cv.width = 120; cv.height = 90;
+    c.appendChild(cv);
+    const d = document.createElement("div");
+    d.className = "menu-mapd";
+    d.innerHTML = `<b>${m.name}</b><span>${m.w}×${m.h} · seed ${m.seed}</span>`;
+    c.appendChild(d);
+    c.addEventListener("click", () => {
+      beep(430, 430, 0.03, "sine", 0.02);
+      for (const x of mapsEl.children) x.classList.remove("on");
+      c.classList.add("on");
+      syncSummary();
+    });
+    mapsEl.appendChild(c);
+    mapThumb(cv, m);
+  });
+
+  // --- faction pickers ---
+  const facValues = Object.keys(FACTION_META).map((k) => ({ id: k, label: FACTION_META[k].nameEN }));
+  segRow(document.getElementById("sk-fac"), facValues, "china", markAiWarning);
+  segRow(document.getElementById("sk-ai"), facValues, "japan", null);
+  // make the (now-stale) ai click handler also re-warn — segRow bound cb=null;
+  for (const b of document.getElementById("sk-ai").children) {
+    b.addEventListener("click", markAiWarning);
+  }
+
+  // --- resource tiers ---
+  const resInfo = {
+    low: "Lean start — expand fast or die trying.",
+    medium: "The intended opening balance.",
+    high: "Comfortable economy — production early.",
+    max: "Maxed treasury — full war economy immediately.",
+  };
+  segRow(document.getElementById("sk-res"),
+    Object.keys(RES_TIERS).map((k) => ({ id: k, label: k[0].toUpperCase() + k.slice(1) })),
+    "medium", (id) => {
+      const t = RES_TIERS[id];
+      document.getElementById("sk-resinfo").textContent =
+        `tin ${t.tin.toLocaleString()} · steel ${t.steel.toLocaleString()} · fuel ${t.fuel.toLocaleString()} — ${resInfo[id]}`;
+    });
+  document.getElementById("sk-res .on")?.dispatchEvent(new Event("click"));
+
+  // --- difficulty ---
+  const diffInfo = {
+    easy: "Slow waves, cheaper economy — a gentle introduction.",
+    medium: "Balanced pace — the intended experience.",
+    hard: "Fast, well-funded waves; the AI rushes heavy units.",
+  };
+  segRow(document.getElementById("sk-diff"),
+    ["easy", "medium", "hard"].map((k) => ({ id: k, label: k.toUpperCase() })),
+    "medium", (id) => {
+      const d = AI_DIFF[id];
+      document.getElementById("sk-diffinfo").textContent =
+        `waves every ${d.waveGap}s · AI funds ×${d.resourceMult} · AI economy ×${d.incomeMult} — ${diffInfo[id]}`;
+    });
+  document.getElementById("sk-diff .on")?.dispatchEvent(new Event("click"));
+
+  document.getElementById("sk-back").addEventListener("click", () => {
+    beep(500, 320, 0.05, "triangle");
+    show(0);
+  });
+  document.getElementById("sk-start").addEventListener("click", () => {
+    const sel = {
+      player: document.querySelector("#sk-fac .on")?.dataset.v || "china",
+      aiFac: document.querySelector("#sk-ai .on")?.dataset.v || "japan",
+      res: document.querySelector("#sk-res .on")?.dataset.v || "medium",
+      diff: document.querySelector("#sk-diff .on")?.dataset.v || "medium",
+      map: MAPS.find((m) => m.id === (document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id)) || MAPS[0],
+    };
+    started = true;
+    beep(620, 920, 0.12, "triangle", 0.03);
+    handlers.onStart(sel);
+  });
+}
+
+// ================================================================
+function buildSettings() {
+  const el = document.getElementById("ms-settings");
+  if (el.dataset.built) { refreshCamLabel(); return; }
+  el.dataset.built = "1";
+  el.innerHTML = `
+    <div class="menu-head">
+      <button class="menu-back" id="st-back">&larr; MAIN MENU</button>
+      <h2>SETTINGS</h2>
+      <div class="menu-spacer"></div>
+    </div>
+    <div class="menu-grid">
+      <div class="menu-box">
+        <h3>AUDIO</h3>
+        <div id="st-audio"></div>
+      </div>
+      <div class="menu-box">
+        <h3>GAMEPLAY</h3>
+        <div id="st-game"></div>
+      </div>
+      <div class="menu-box">
+        <h3>LAST CAMERA</h3>
+        <p id="st-cam" class="menu-info">not yet saved</p>
+        <div class="menu-hint">the view position is saved when a game ends</div>
+      </div>
+    </div>
+    <div class="menu-foot"><button class="menu-start" id="st-close">DONE</button></div>`;
+
+  toggleRow(document.getElementById("st-audio"), "Music", () => !MENU.S.musicMuted, (v) => {
+    MENU.S.musicMuted = !v; sfx && (sfx.musicMuted = MENU.S.musicMuted); saveSettings();
+  });
+  toggleRow(document.getElementById("st-audio"), "SFX volume", () => MENU.S.sfxVol > 0, (v) => {
+    MENU.S.sfxVol = v ? 1 : 0.25; applySfx(); saveSettings();
+  });
+
+  toggleRow(document.getElementById("st-game"), "Screen shake", () => MENU.S.shake, (v) => {
+    MENU.S.shake = v; TUNE.shake = v; saveSettings();
+  });
+  toggleRow(document.getElementById("st-game"), "Show grid (debug)", () => MENU.S.showGrid, (v) => {
+    MENU.S.showGrid = v; saveSettings();
+  });
+
+  document.getElementById("st-back").addEventListener("click", () => { beep(500, 320, 0.05, "triangle"); show(0); });
+  document.getElementById("st-close").addEventListener("click", () => { beep(500, 322, 0.05, "triangle"); show(0); });
+  refreshCamLabel();
+}
+
+function refreshCamLabel() {
+  const el = document.getElementById("st-cam");
+  if (!el) return;
+  el.textContent = MENU.S.camX != null
+    ? `saved at tile (${Math.floor(MENU.S.camX / 32)}, ${Math.floor((MENU.S.camY || 0) / 32)})`
+    : "not yet saved";
+}
+
+// main.js calls this once the sound system exists (or after settings edits)
+export function setSfx(ref) {
+  sfx = ref;
+  applySfx();
+}
+function applySfx() {
+  if (!sfx) return;
+  if (sfx.applySettings) sfx.applySettings(MENU.S);
+}
+
+// main.js saves the camera when the game ends so SETTINGS can report it
+export function saveCam(x, y) {
+  MENU.S.camX = x;
+  MENU.S.camY = y;
+  saveSettings();
+  refreshCamLabel();
+}
+
+export function isStarted() { return started; }
+
+
+== INDEX.HTML len 473 ==
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>War of the East — 東洋戦争 (1937–1945)</title>
+  <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+  <div id="menu"></div>
+  <div id="game" class="hidden">
+    <canvas id="view"></canvas>
+    <!-- UI panels are injected here by js/ui.js -->
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
+
+
+== CSS len 6875 ==
+/* War of the East — C&C-style layout.
+   Canvas #view fills the frame. Overlaid by:
+   #res  (top resource strip) · #command (RIGHT vertical build panel + tabs)
+   #hud-bottom (bottom-left minimap + selection panel). */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: #0a0d0a;
+  color: #d8d2b0;
+  font-family: "Trebuchet MS", "MS Gothic", sans-serif;
+  font-size: 13px;
+  -webkit-user-select: none; user-select: none;
+}
+
+#game { position: absolute; inset: 0; outline: none; }
+
+#view {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  background: #2a2e22;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+/* ---------- top resource strip ---------- */
+#res {
+  position: absolute; top: 0; left: 0; right: 0; height: 26px;
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 12px;
+  background: linear-gradient(#1c2016cc, #10130cd0);
+  border-bottom: 1px solid #4a4a2c;
+  z-index: 6; pointer-events: none;
+}
+#res .ri { display: flex; align-items: baseline; gap: 4px; font-size: 12px; color: #9a9468; white-space: nowrap; }
+#res .ri b { font-size: 14px; font-weight: bold; color: #e8e0b0; }
+#res .ri.low b { color: #ff7a4a; }
+#res .ri.paused, #res .ri.over { margin-left: auto; color: #ffd24a; font-size: 12px; letter-spacing: 1px; }
+#res .ri.over b { color: #ffd24a; }
+
+/* ---------- command panel (RIGHT side, tabbed) ---------- */
+#command {
+  position: absolute; top: 30px; right: 8px; bottom: 8px; width: 206px;
+  display: flex; flex-direction: column;
+  background: linear-gradient(#171a10e6, #0d0f08e6);
+  border: 1px solid #4a4a2c;
+  border-radius: 3px;
+  box-shadow: 0 0 18px rgba(0,0,0,.5);
+  z-index: 6; overflow: hidden;
+}
+#cmdTabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px;
+  padding: 4px;
+  border-bottom: 1px solid #3a3a22;
+  background: #101309;
+}
+.cmd-tab {
+  position: relative;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 1px;
+  padding: 5px 6px 4px;
+  border: 1px solid #2e2e1c;
+  border-radius: 2px;
+  background: #1c2014;
+  cursor: pointer;
+  line-height: 1.1;
+}
+.cmd-tab .ct-label { font-size: 11px; font-weight: bold; letter-spacing: .5px; color: #c9c39a; }
+.cmd-tab kbd {
+  position: absolute; top: 2px; right: 4px;
+  font-size: 9px; color: #7a7450;
+  border: 1px solid #3a3a22; border-radius: 2px; padding: 0 3px;
+}
+.cmd-tab:hover { background: #242818; border-color: #5a5a34; }
+.cmd-tab.on {
+  background: linear-gradient(#3a3c1e, #2a2c14);
+  border-color: #ffd24a;
+}
+.cmd-tab.on .ct-label { color: #ffd24a; }
+.cmd-tab.on kbd { color: #ffd24a; border-color: #7a5a1c; }
+
+#cmdBody { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 5px; }
+
+/* ---------- build/unit/research cards ---------- */
+.card {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 4px; margin: 2px 0;
+  border: 1px solid #2e2e1c;
+  background: #1c2014;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.card:hover { background: #262a1a; border-color: #5a5a34; }
+.card.off { opacity: .42; }
+.card.active { border-color: #ffd24a; background: #2e2e14; box-shadow: 0 0 6px rgba(255,210,74,.3) inset; }
+.card.done { opacity: .55; cursor: default; border-style: dashed; }
+
+.thumb {
+  width: 36px; height: 36px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: #10130a;
+  border: 1px solid #34341e; border-radius: 2px;
+  font-weight: bold; font-size: 13px; color: #9a9468;
+}
+.thumb img { width: 34px; height: 34px; image-rendering: pixelated; }
+.thumb.rs { color: #ffd24a; font-size: 12px; }
+.thumb.air { border-color: #3a5a6a; }
+.thumb.veh { border-color: #4a5a3a; }
+
+.cbody { flex: 1; min-width: 0; }
+.cbody .nm { font-size: 12px; color: #e9e2bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cbody .meta { font-size: 9.5px; color: #8a8458; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; line-height: 1.3; }
+.cbody .meta em.no { color: #ff9a6a; font-style: italic; }
+.cost { font-size: 10px; color: #9a9468; white-space: nowrap; margin-left: 2px; }
+.lock { display: inline-block; margin-left: 4px; font-size: 9px; color: #ffd24a; border: 1px solid #7a5a1c; border-radius: 2px; padding: 0 3px; vertical-align: middle; }
+.dim { opacity: .5; font-size: 11px; padding: 6px; text-align: center; }
+
+/* ---------- bottom-left: minimap + selection ---------- */
+#hud-bottom {
+  position: absolute; left: 8px; bottom: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+  z-index: 6;
+}
+#mmwrap {
+  width: 180px; height: 180px;
+  border: 2px solid #4a4a2c;
+  background: #0a0d0a;
+  box-shadow: 0 0 14px rgba(0,0,0,.5);
+}
+#minimap { width: 100%; height: 100%; display: block; cursor: crosshair; image-rendering: pixelated; }
+
+#sel {
+  width: 180px;
+  background: linear-gradient(#171a10e6, #0d0f08e6);
+  border: 1px solid #4a4a2c;
+  border-radius: 3px;
+  padding: 5px 6px;
+  font-size: 11px;
+}
+.selhead { display: flex; justify-content: space-between; gap: 6px; font-weight: bold; color: #e9e2bd; font-size: 12px; }
+.selhead .tag { color: #8a8458; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; align-self: center; }
+.selrow { margin-top: 2px; color: #c9c39a; line-height: 1.35; }
+.selrow.dim { color: #8a8458; }
+.selhint { color: #8a8458; font-size: 10px; line-height: 1.5; }
+.selhint b { color: #c9c39a; }
+.selbtn {
+  margin-top: 4px;
+  font-size: 10px; padding: 2px 8px;
+  background: #2c2c14; color: #e9e2bd;
+  border: 1px solid #7a5a1c; border-radius: 2px;
+  cursor: pointer;
+}
+.selbtn:hover { background: #3a3c1e; border-color: #ffd24a; }
+
+/* ---------- scrollbars ---------- */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: #3a3a22; border-radius: 4px; }
+::-webkit-scrollbar-track { background: #12150c; }
+
+/* ---------- game over ---------- */
+#over {
+  position: absolute; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 10, 5, 0.72);
+  backdrop-filter: blur(2px);
+}
+#over.hidden { display: none; }
+.over-card {
+  background: linear-gradient(180deg, #20241a, #14180f);
+  border: 2px solid #7a5a1c; border-radius: 6px;
+  padding: 34px 56px; text-align: center;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.7);
+}
+.over-title {
+  font-size: 44px; font-weight: 700; letter-spacing: 6px; margin-bottom: 10px;
+}
+.over-title.win { color: #ffd24a; text-shadow: 0 0 18px rgba(255, 210, 74, 0.5); }
+.over-title.lose { color: #d94b3a; text-shadow: 0 0 18px rgba(200, 70, 50, 0.5); }
+.over-sub { color: #cfc9a4; font-size: 15px; margin-bottom: 22px; }
+.overbtn {
+  background: #2c2c14; color: #ffd24a;
+  border: 1px solid #7a5a1c; border-radius: 3px;
+  padding: 10px 26px; font-size: 14px; letter-spacing: 2px; cursor: pointer;
+}
+.overbtn:hover { background: #3a3c1e; border-color: #ffd24a; }

@@ -1,0 +1,179 @@
+## config AI block:
+export const AI_DIFF = {
+  easy:   { label: "EASY",   waveGap: 150, nextWave: 110, strength: 1.5,  resourceMult: 0.8,  incomeMult: 0.85, preResearch: [] },
+  medium: { label: "MEDIUM", waveGap: 90,  nextWave: 60,  strength: 1.0,  resourceMult: 1.0,  incomeMult: 1.0,  preResearch: [] },
+  hard:   { label: "HARD",   waveGap: 55,  nextWave: 40,  strength: 0.75, resourceMult: 1.6,  incomeMult: 1.25, preResearch: ["up1a", "up2a"] },
+};
+
+// Skirmish maps (seeded + reproducible).
+export const MAPS = [
+  { id: "m1937", name: "Marco Polo Bridge '37", w: 45, h: 45, seed: 20260924 },
+  { id: "m1938", name: "Shandong Front '38",    w: 60, h: 60, seed: 19381115 },
+  { id: "m1940", name: "Yangtze Delta '40",      w: 80, h: 60, seed: 19400720 },
+  { id: "m1944", name: "Burma Road '44",         w: 70, h: 40, seed: 19440201 },
+];
+
+export const FACS = ["china", "japan"];
+
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,   
+
+## engine aiMult + opts:
+    this.player = opts.player || "china";
+    this.diff = (opts.diff && AI_DIFF[opts.diff]) || null;
+    const aiMult = this.diff ? this.diff.resourceMult : 1.0;
+          tin: (f === this.aiFac ? START.tin * aiMult : START.tin) * (opts.resMult || 1),
+          steel: (f === this.aiFac ? START.steel * aiMult : START.steel) * (opts.resMult || 1),
+          fuel: (f === this.aiFac ? START.fuel * aiMult : START.fuel) * (opts.resMult || 1),
+
+## engine ctor body:
+(NOT FOUND: constructor(opts))
+
+## engine TUNE.use:
+        power: { gen: TUNE.basePower, draw: 0, ok: true },
+    this.gain(b.fac, b.cfg.cost.tin * TUNE.sellRefund * 0.5, b.cfg.cost.steel * 0.5 * TUNE.sellRefund, 0);
+      let gen = TUNE.basePower, draw = 0;
+      if (!ok) { tin *= TUNE.underpowerMult; fuel *= TUNE.underpowerMult; }
+      this.gain(f, (tin + TUNE.baseIncomeTin * (this.fac[f].incomeMult ?? 1)) * dt, 0, fuel * dt);
+
+## engine AI_DIFF:
+import { UNITS, BUILDINGS, UPGRADES, TUNE, TILE, FACTION_META, START, producible, AI_DIFF } from "./config.js";
+    this.diff = (opts.diff && AI_DIFF[opts.diff]) || null;
+
+## engine resMult/wave:
+          tin: (f === this.aiFac ? START.tin * aiMult : START.tin) * (opts.resMult || 1),
+          steel: (f === this.aiFac ? START.steel * aiMult : START.steel) * (opts.resMult || 1),
+          fuel: (f === this.aiFac ? START.fuel * aiMult : START.fuel) * (opts.resMult || 1),
+        incomeMult: f === this.aiFac && this.diff ? this.diff.incomeMult : 1.0,
+      this.gain(f, (tin + TUNE.baseIncomeTin * (this.fac[f].incomeMult ?? 1)) * dt, 0, fuel * dt);
+
+## engine setupBases:
+setupBases() {
+    // China: NW corner (3,3). Japan: SE corner. Map gen clears 5x5 around each corner.
+    const spots = [
+      { fac: "china", cx: 3, cy: 3 },
+      { fac: "japan", cx: this.map.w - 4, cy: this.map.h - 4 },
+    ];
+    const inb = (x, y) => x >= 0 && y >= 0 && x < this.map.w && y < this.map.h;
+    const freeTile = (x, y) => inb(x, y) && this.map.buildable(x, y) && !this.buildingAt(x, y) && !this.occupied.has(x + "," + y);
+    const scan = (cx, cy, kind, maxD) => {
+      for (let d = 0; d <= maxD; d++)
+        for (let dy = -d; dy <= d; dy++)
+          for (let dx = -d; dx <= d; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue;
+            const x = cx + dx, y = cy + dy;
+            if (!inb(x, y)) continue;
+            const has = kind === "ore"
+
+## ui clamps:
+
+
+## ui showOver:
+showOver(winner) {
+    const g = this.g;
+    const win = winner === g.player;
+    const ov = this.root.querySelector("#over");
+    ov.querySelector(".over-title").textContent = win ? "VICTORY — 大捷" : "DEFEAT — 敗北";
+    ov.querySelector(".over-title").className = "over-title " + (win ? "win" : "lose");
+    ov.querySelector(".over-sub").textContent = win
+      ? `The enemy depot has fallen. ${g.playerName} holds the East.`
+      : `Your depot has fallen. ${g.aiName} takes the East.`;
+    ov.classList.remove("hidden");
+    if (!this._overBound) {
+      this._overBound = true;
+      const restart 
+
+## ui minimap def:
+drawMinimap() {
+    const g = this.g, m = this.mctx, W = MAP_W, H = MAP_H;
+    const cw = this.mm.width, ch = this.mm.height;
+    const sx = cw / W, sy = ch / H;
+    // terrain (downsample 2 tiles per pixel-ish)
+    m.fillStyle = "#20301a"; m.fillRect(0, 0, cw, ch);
+    const ts = g.map.tiles || [];
+    const step = 2;
+    for (let ty = 0; ty < H; ty += step) for (let tx = 0; tx < W; tx += step) {
+      const t = ts[ty * W + tx] || 0;
+      if (t === T.ORE) m.fillStyle = "#6b5a3a";
+      else if (t === T.OIL) m.fillStyle = "#2a2018";
+      else if (t === T.ROCK) m.fillStyle = "#3a3a3a";
+      else if (t === T.TREE) m.fillStyle = "#1c3315";
+      else m.fillStyle = "#24361c";
+      m.fillRect(tx * sx, ty * sy, sx * step, sy * step);
+    }
+    // buildings
+    for (const b of g.buildings) { if (b.dead) continue; m.fillStyle = b.fac === g.player ? "#3fd66f" : "#f0603a"; m.fillRect(b.tx * sx, b.ty * sy, b.w * sx + 1, b.h * sy + 1); }
+    // units (positions are pixels -> divide by TILE for tile space)
+    for (const u of g.units) { if (u.dead || !u.isAlive()) continue; m.fillStyle = u.fac === g.player ? "#8dffae" : "#ffcf6a"; m.fillRect(u.x / TILE * sx - 1, u.y / TILE * sy - 1, 2, 2); 
+
+## ui player color lines:
+
+
+## ui winner/onEnd:
+      if (this.g && !this.g.winner && !e.ctrlKey && !e.altKey && !e.metaKey && document.activeElement.tagName !== "INPUT") {
+    if (g.winner) return;
+      (g.winner ? `<span class="ri over">— ${g.winner === g.player ? "VICTORY" : "DEFEAT"} —</span>` : "");
+  showOver(winner) {
+    const win = winner === g.player;
+        if (e.key === "Enter" && g.winner) restart();
+
+## menu head 1-40:
+// WAR OF THE EAST — menu.js
+// Title screen (MAIN MENU: SKIRMISH / MISSION(greyed) / SETTINGS) + skirmish setup.
+// The game does NOT auto-start: bootMenu() shows the title and waits for the
+// player to press START BATTLE. MISSION stays disabled until campaign data ships.
+// Ground truth: config.js (MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE).
+import { MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE } from "./config.js";
+import { generateMap } from "./rand.js";
+import { generateTileSheet } from "./sprites.js";
+
+const STORE = "woe-settings";
+
+// Live settings — read by main.js / ui.js; persisted to localStorage.
+export const MENU = {
+  S: {
+    musicMuted: false,
+    sfxVol: 1,
+    musicVol: 1,
+    shake: TUNE.shake,
+    showGrid: false,
+    camX: null, camY: null,
+  },
+};
+
+let sfx = null;                 // set via setSfx() after the sound system is built
+let handlers = null;            // { onStart(sel), onQuit() }
+let started = false;            // true once the player chose START BATTLE
+const beep = (f0, f1, d, type = "square", vol = 0.025) => sfx && sfx.beep(f0, f1, d, type, vol);
+
+function loadSettings() {
+  try {
+    const j = JSON.parse(localStorage.getItem(STORE) || "{}");
+    Object.assign(MENU.S, j);
+    if (typeof MENU.S.camX !== "number") MENU.S.camX = null;
+  } catch { /* first run */ }
+}
+function saveSettings() {
+  try { localStorage.setItem(STORE, JSON.stringify(MENU.S)); } catch { /* private mode */ }
+}
+
+function segRow(container, values, selected, cb) {
+
+## rand genMap sig:
+export function generateMap({ w, h, seed }) {
+  const rng = makeRng(seed);
+  const tiles = new Uint8Array(w * h);       // terrain
+  const rocks = new Set();                   // solid tile coords "x,y"
+  const trees = new Set();
+  const oreSpots = new Set();
+  const oilSpots = new Set();
+  const key = (x, y) => x + "," + y;
+
+  // value-noise-ish clumps
+  const blobs = [];
+  const nBlobs = 14;
+  f

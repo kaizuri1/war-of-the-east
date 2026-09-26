@@ -1,0 +1,169 @@
+// War of the East — bootstrap: menu first, then wires config → map → engine →
+// renderer → input → UI → AI, and runs a clamped requestAnimationFrame loop.
+import { TILE, RES_TIERS } from "./config.js";
+import { generateMap, T } from "./rand.js";
+import { Game } from "./engine.js";
+import { Renderer } from "./renderer.js";
+import { Input } from "./input.js";
+import { UI } from "./ui.js";
+import { AI } from "./ai.js";
+import { buildTiles, buildSprites, loadArtOverrides, TILES } from "./sprites.js";
+import { bootMenu } from "./menu.js";
+
+let game, renderer, input, ui, ai, canvas, sfx;
+// Dev debug hooks — set the instant modules load, before any await.
+window.__dbg = { game: () => game, renderer: () => renderer, tiles: () => TILES };
+
+async function boot() {
+  await loadArtOverrides(); // drop-in PNG art if present; silent no-op otherwise
+  buildTiles();
+  buildSprites();
+  canvas = document.getElementById("view");
+  renderer = new Renderer(canvas);
+  renderer.resize();
+  sfx = makeSfx();
+  sfx.applySettings = applySettings;   // hooks up menu SETTINGS sliders
+  bootMenu({ onPlay: playGame });
+  window.__woetBooted = true; // clears the file:// watchdog in index.html
+}
+
+function applySettings(s) {
+  // s = { sfxVol, musicVol, musicMuted, shake } — applied live.
+  if (s && !sfx) return;
+  if (sfx._setVol) sfx._setVol(s.sfxVol);
+  if (s.fx.shake !== undefined) window.WOE_SHAKE = s.fx.shake !== "off";
+}
+
+// Build a full match from the skirmish setup chosen in the menu, then hand
+// control to the game loop. The menu DOM is cleared by the UI constructor.
+function playGame(cfg) {
+  // Menu sends {player, aiFac, res, diff, map:{w,h,seed}} — normalize defensively.
+  const m = cfg.map && typeof cfg.map === "object" ? cfg.map : cfg;
+  const map = generateMap({ w: m.w, h: m.h, seed: m.seed });
+  const resTier = RES_TIERS[cfg.res] || null;
+  game = new Game(map, { player: cfg.player, diff: cfg.diff, res: cfg.res, resTier });
+  game.setupBases();
+  document.getElementById("menu").classList.add("hidden");
+  const gameEl = document.getElementById("game");
+  gameEl.classList.remove("hidden");
+  renderer.resize(); // game was hidden at boot (canvas sized 0x0) — re-measure now visible
+
+  renderer.cam.x = 3 * TILE - canvas.clientWidth / 2 / renderer.cam.zoom;
+  renderer.cam.y = 3 * TILE - canvas.clientHeight / 2 / renderer.cam.zoom;
+
+  input = new Input(canvas, game, renderer, null);   // ui backfilled below (circular ctor)
+  input.clampCam();
+  ui = new UI(document.getElementById("game"), game, canvas, input);
+  input.ui = ui;
+  ui.attachRenderer(renderer);
+  game.attach({ sfx, onWin: (w) => ui.showOver(w) });
+  ui.attachSfx();
+  ui.root.setAttribute("tabindex", "0");
+  ui.root.focus();
+  game.onUiTick = (dt) => ui.uiTick(dt);
+  ai = new AI(game, game.aiFac);
+
+  renderer.cam.x = (game.bases?.[cfg.player]?.x ?? 3 * TILE) - canvas.clientWidth / 2 / renderer.cam.zoom;
+  renderer.cam.y = (game.bases?.[cfg.player]?.y ?? 3 * TILE) - canvas.clientHeight / 2 / renderer.cam.zoom;
+  input.clampCam();
+}
+
+// Richer WebAudio SFX: layered oscillators + noise bursts + low drum,
+// tuned per event. No audio assets.
+function makeSfx() {
+  let ctx = null, master = null, noiseBuf = null;
+  const ensure = () => {
+    if (!ctx) {
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        master = ctx.createGain();
+        master.gain.value = 0.9;
+        // simple feedback delay for a bit of space
+        const dl = ctx.createDelay(0.5); dl.delayTime.value = 0.11;
+        const fb = ctx.createGain(); fb.gain.value = 0.18;
+        const dlp = ctx.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 2400;
+        master.connect(ctx.destination);
+        master.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(ctx.destination);
+        // pre-baked 1s white noise
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      } catch (e) { return null; }
+      if (ctx.state === "suspended") ctx.resume();
+    }
+    return ctx;
+  };
+  const env = (g, t, a, d) => { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(1, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); };
+  const osc = (type, f0, f1, a, d, vol, t0 = 0) => {
+    const c = ensure(); if (!c) return;
+    const t = c.currentTime + t0, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t);
+    if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + a + d);
+    env(g, t, a, d); g.gain.setValueAtTime(0.0001, t + a + d + 0.0001);
+    g.connect(master); o.connect(g); o.start(t); o.stop(t + a + d + 0.05);
+  };
+  const noise = (f, a, d, vol, type = "bandpass", t0 = 0) => {
+    const c = ensure(); if (!c) return;
+    const t = c.currentTime + t0, s = c.createBufferSource(); s.buffer = noiseBuf;
+    const flt = c.createBiquadFilter(); flt.type = type; flt.frequency.value = f;
+    const g = c.createGain(); env(g, t, a, d); g.gain.setValueAtTime(0.001, t);
+    g.gain.setValueAtTime(vol, t + a);
+    s.connect(flt); flt.connect(g); g.connect(master); s.start(t); s.stop(t + a + d + 0.05);
+  };
+  return (name) => {
+    const t = ensure(); if (!t) return;
+    switch (name) {
+      case "shot":      // soft muzzle crack: filtered noise + low thump
+        noise(1600, 0.002, 0.06, 0.35, "highpass"); osc("sine", 180, 60, 0.002, 0.08, 0.4); break;
+      case "impact":    // metal impact: short noise + mid click
+        noise(500, 0.002, 0.12, 0.4, "bandpass"); osc("square", 220, 140, 0.002, 0.07, 0.22); break;
+      case "build":     // construction: hammer taps (two low thumps) + wood noise
+        osc("sine", 90, 55, 0.003, 0.09, 0.5); osc("sine", 90, 55, 0.003, 0.09, 0.5, 0.11);
+        noise(300, 0.005, 0.1, 0.2, "bandpass"); break;
+      case "demolish":  // explosion: low boom + long noise tail + sub rumble
+        noise(900, 0.003, 0.35, 0.6, "lowpass"); osc("sine", 70, 30, 0.004, 0.3, 0.7);
+        osc("sawtooth", 55, 25, 0.005, 0.22, 0.3); noise(400, 0.01, 0.25, 0.35, "bandpass", 0.03); break;
+      case "die":       // unit death: quick pitch-drop
+        osc("sawtooth", 300, 70, 0.004, 0.18, 0.35); noise(700, 0.003, 0.1, 0.2, "bandpass"); break;
+      case "research":  // research complete: bright rising two-note sine
+        osc("sine", 520, 780, 0.01, 0.12, 0.4); osc("sine", 780, 1170, 0.01, 0.14, 0.4, 0.09);
+        osc("triangle", 1040, 1560, 0.01, 0.1, 0.25, 0.18); break;
+      case "spawn":     // unit deployed: soft two-note
+        osc("triangle", 330, 440, 0.008, 0.09, 0.3); osc("sine", 440, 660, 0.008, 0.08, 0.2, 0.07); break;
+      case "win":       // victory: rising triad
+        [523, 659, 784, 1046].forEach((f, i) => { osc("sine", f, f, 0.01, 0.4, 0.35, i * 0.11); osc("triangle", f * 2, f * 2, 0.01, 0.3, 0.12, i * 0.11); });
+        noise(3000, 0.01, 0.5, 0.15, "highpass", 0.4); break;
+      case "click":     // subtle UI tick
+        osc("triangle", 620, 480, 0.002, 0.04, 0.18); break;
+      case "error":     // UI error: short descending buzz
+        osc("square", 200, 120, 0.004, 0.12, 0.3, 0); osc("square", 150, 90, 0.004, 0.12, 0.25, 0.05); break;
+      default: osc("sine", 500, 400, 0.003, 0.05, 0.2);
+    }
+  };
+}
+
+let last = 0;
+function frame(ts) {
+  const dt = Math.min(0.1, (ts - last) / 1000 || 0);
+  last = ts;
+  if (game && !game.winner) {
+    const spd = game.speed || 1;
+    try {
+      for (let i = 0; i < spd; i++) game.update(dt);
+      if (ai) ai.tick(dt * spd);
+      if (input) input.update(dt);
+    } catch (e) {
+      // A throw inside the tick MUST NOT kill the rAF chain — that freezes the game.
+      if (!e.__warned) { console.error("[game tick]", e); e.__warned = true; }
+    }
+  }
+  if (game && game.onUiTick) game.onUiTick(dt);
+  if (renderer && game) renderer.draw(game);
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener("resize", () => renderer && renderer.resize());
+
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+else boot();
+requestAnimationFrame(frame);

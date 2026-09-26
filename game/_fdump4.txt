@@ -1,0 +1,204 @@
+## TERRAIN_CODES:
+(NOT FOUND: export const TERRAIN_CODES)
+
+## TUNE:
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRate: 25,               // fuel/s at own refinery / tank factory
+  refuelRadius: 64,             // px — how close a tank must be to refill
+  aiWaveInterval: 45,
+  aiAggroMin: 4,
+  maxUnitsPerSide: 120,
+  zoomMin: 0.5, zoomMax: 2.0,
+  basePower: 80,
+  baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+};
+
+(none)
+
+## rand T set:
+const T = {
+  GRASS: 0, ORE: 1, OIL: 2, ROCK: 3, TREE: 4, ROAD: 5,
+}
+
+## rand return:
+cks.has(x + "," + y); },
+    buildable(x, y) {
+      if (x < 0 || y < 0 || x >= w || y >= h) return false;
+      const k = x + "," + y;
+      return !rocks.has(k) && !trees.has(k);
+    },
+    hasOre(x, y) { return oreSpots.has(x + "," + y); },
+    hasOil(x, y) { return oilSpots.has(x + "," + y); },
+    clearTile(x, y) {
+      // player demolishing trees/rocks (cheap utility for build flow)
+      const k = x + "," + y;
+      if (rocks.has(k)) { rocks.delete(k); tiles[y * w + x] = T.GRASS; return true; }
+      if (trees.has(k)) { trees.delete(k); tiles[y * w + x] = T.GRASS; return true; }
+      return false;
+    },
+  };
+}
+
+
+## renderer draw:
+draw(game) {
+    const g = this.g, c = this.cam, z = c.zoom;
+    // clear last frame, then apply camera transform
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = "#10150d";
+    g.fillRect(0, 0, this.cv.width, this.cv.height);
+    g.setTransform(this.dpr * z, 0, 0, this.dpr * z, -c.x * z * this.dpr, -c.y * z * this.dpr);
+    // visible tile range
+    const x0 = Math.max(0, Math.floor(c.x / TILE) - 1);
+    const y0 = Math.max(0, Math.floor(c.y / TILE) - 1);
+    const x1 = Math.min(MAP_W - 1, Math.ceil((c.x + this.cv.clientWidth / z) / TILE) + 1);
+    const y1 = Math.min(MAP_H - 1, Math.ceil((c.y + this.cv.clientHeight / z) / TILE) + 1);
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++)
+        this.drawTile(game, tx, ty);
+    // build ghost
+    if (this.buildGhost) this.drawGhost(game);
+    // selection rings under units
+    for (const e of game.units) if (e.selected) this.ring(e, "#ffe873");
+    for (const b of game.buildings) if (!b.dead && b.selected) this.bRing(b, "#ffe873");
+    // buildings
+    for (const b of game.buildings) if (!b.dead) this.drawBuilding(game, b);
+    // units
+    for (const u of game.units) if (!u.dead) this.drawUnit(game, u);
+    // projectiles on top
+    for (const p of game.projectiles) this.drawProjectile(p);
+    // rubber-band selection box (screen space)
+    if (this.dragSel) {
+      g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      g.strokeStyle = "#ffe873"; g.lineWidth = 1;
+      g.fillStyle = "rgba(255,232,115,0.12)";
+      const s = this.dragSel;
+      g.fillRect(s.x, s.y, s.w, s.h);
+      g.strokeRect(s.x + 0.5, s.y + 0.5, s.w, s.h);
+    }
+    this.ox = null;
+  }
+  drawTile(game, tx, ty) {
+    const g = this.g;
+    const t = game.map.tiles[ty * game.map.w + tx] || 0;
+    let img = t === T.ORE ? TILES.ore : t === T.OIL ? TILES.oil : t === T.ROCK ? TILES.rock : t === T.TREE ? TILES.tree : TILES.grass;
+    g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
+  }
+  drawBuilding(game, b) {
+    const g = this.g;
+    const img = SPRITES[bSpriteKey(b.fac, b.cfg)];
+    const W = b.w * TILE, H = b.h * TILE;
+    const ex = b.tx * TILE, ey = b.ty * TILE;
+    if (img) g.drawImage(img, ex, ey, W, H);
+    else { g.fillStyle = FACTION_META[b.fac].color; g.fillRect(ex + 2, ey + 2, W - 4, H - 4); }
+    // under-construction overlay + progress
+    if (b.underConstruction()) {
+      g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(ex, ey, W, H);
+      const pct = Math.min(1, b.buildT / (b.built || 1));
+      g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
+      g.fillStyle = "#e8c840"; g.fillRect(ex +
+
+## ui minimap:
+drawMinimap();
+    // keep card affordability / tier-unlocks / research state live (1s cadence)
+    g._gridAcc = (g._gridAcc || 0) + 0.15;
+    if (g._gridAcc >= 1) { g._gridAcc = 0; this.refresh(); }
+  }
+  refreshSel() {
+    const g = this.g;
+    const su = g.units.filter((u) => u.selected && !u.dead && u.isAlive());
+    const sb = g.buildings.filter((b) => b.selected && !b.dead && b.isAlive());
+    const el = this.root.querySelector("#sel");
+    let h = "";
+    if (su.length) {
+      const c = su[0].cfg;
+      const hp = Math.round(su.reduce((a, u) => a + u.hp, 0) / su.length);
+      h = `<div class="selhead"><span>${c.name}${su.length > 1 ? " ×" + su.length : ""}</span><span class="tag">${c.class}</span></div>
+          <div class="selrow">avg hp ${hp}/${c.hp}</div>
+          <div class="selrow dim">dmg ${c.dmg} · range ${Math.round(c.range)} · sp ${c.speed}</div>
+          <div class="selhint">RMB move · RMB+enemy attack · CTR+1..5 group</div>`;
+    } else if (sb.length) {
+      const b = sb[0], q = b.queue || [];
+      h = `<div class="selhead"><span>${b.cfg.name}</span><span class="tag">${b.cfg.produces || "building"}</span></div>
+          <div class="selrow">hp ${Math.round(b.hp)}/${b.maxHp}${b.underConstruction() ? " · under construction" : ""}${b.underpowered ? " · ⚠ NO POWER" : ""}</div>
+          ${b.cfg.slots ? `<div class="selrow">queue ${q.length}/${b.cfg.slots}${
+
+## ui MAP_W refs:
+import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META } from "./config.js";
+    const g = this.g, m = this.mctx, W = MAP_W, H = MAP_H;
+
+## ui nameEN refs:
+
+
+## css selectors:
+   #res  (top resource strip) · #command (RIGHT vertical build panel + tabs)
+   #hud-bottom (bottom-left minimap + selection panel). */
+html, body { height: 100%; overflow: hidden; }
+#game { position: absolute; inset: 0; outline: none; }
+#view {
+#res {
+#res .ri { display: flex; align-items: baseline; gap: 4px; font-size: 12px; color: #9a9468; white-space: nowrap; }
+#res .ri b { font-size: 14px; font-weight: bold; color: #e8e0b0; }
+#res .ri.low b { color: #ff7a4a; }
+#res .ri.paused, #res .ri.over { margin-left: auto; color: #ffd24a; font-size: 12px; letter-spacing: 1px; }
+#res .ri.over b { color: #ffd24a; }
+#command {
+  z-index: 6; overflow: hidden;
+#cmdTabs {
+.cmd-tab {
+.cmd-tab .ct-label { font-size: 11px; font-weight: bold; letter-spacing: .5px; color: #c9c39a; }
+.cmd-tab kbd {
+.cmd-tab:hover { background: #242818; border-color: #5a5a34; }
+.cmd-tab.on {
+.cmd-tab.on .ct-label { color: #ffd24a; }
+.cmd-tab.on kbd { color: #ffd24a; border-color: #7a5a1c; }
+#cmdBody { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 5px; }
+.card {
+.card:hover { background: #262a1a; border-color: #5a5a34; }
+.card.off { opacity: .42; }
+.card.active { border-color: #ffd24a; background: #2e2e14; box-shadow: 0 0 6px rgba(255,210,74,.3) inset; }
+.card.done { opacity: .55; cursor: default; border-style: dashed; }
+.thumb {
+.thumb img { width: 34px; height: 34px; image-rendering: pixelated; }
+.thumb.rs { color: #ffd24a; font-size: 12px; }
+.thumb.air { border-color: #3a5a6a; }
+.thumb.veh { border-color: #4a5a3a; }
+.cbody { flex: 1; min-width: 0; }
+.cbody .nm { font-size: 12px; color: #e9e2bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cbody .meta { font-size: 9.5px; color: #8a8458; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; line-height: 1.3; }
+.cbody .meta em.no { color: #ff9a6a; font-style: italic; }
+.cost { font-size: 10px; color: #9a9468; white-space: nowrap; margin-left: 2px; }
+.lock { display: inline-block; margin-left: 4px; font-size: 9px; color: #ffd24a; border: 1px solid #7a5a1c; border-radius: 2px; padding: 0 3px; vertical-align: middle; }
+.dim { opacity: .5; font-size: 11px; padding: 6px; text-align: center; }
+#hud-bottom {
+#mmwrap {
+#minimap { width: 100%; height: 100%; display: block; cursor: crosshair; image-rendering: pixelated; }
+#sel {
+.selhead { display: flex; justify-content: space-between; gap: 6px; font-weight: bold; color: #e9e2bd; font-size: 12px; }
+.selhead .tag { color: #8a8458; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; align-self: center; }
+.selrow { margin-top: 2px; color: #c9c39a; line-height: 1.35; }
+.selrow.dim { color: #8a8458; }
+.selhint { color: #8a8458; font-size: 10px; line-height: 1.5; }
+.selhint b { color: #c9c39a; }
+.selbtn {
+.selbtn:hover { background: #3a3c1e; border-color: #ffd24a; }
+#over {
+#over.hidden { display: none; }
+.over-card {
+.over-title {
+.over-title.win { color: #ffd24a; text-shadow: 0 0 18px rgba(255, 210, 74, 0.5); }
+.over-title.lose { color: #d94b3a; text-shadow: 0 0 18px rgba(200, 70, 50, 0.5); }
+.over-sub { color: #cfc9a4; font-size: 15px; margin-bottom: 22px; }
+.overbtn {
+.overbtn:hover { background: #3a3c1e; border-color: #ffd24a; }
+
+## css hidden/menu check: display=True .hidden=True #menu=False menu-screen=False

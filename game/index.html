@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>War of the East — 東洋戦争 (1937–1945)</title>
+  <link rel="stylesheet" href="css/game.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23243b1f'/><circle cx='16' cy='16' r='7' fill='%23d9b44a'/></svg>" />
+</head>
+<body>
+  <div id="menu"></div>
+  <div id="game" class="hidden">
+    <canvas id="view"></canvas>
+    <!-- UI panels are injected here by js/ui.js -->
+  </div>
+  <!-- Boot watchdog: if the module never boots (e.g. opened via file://), say so instead of a blank page. -->
+  <script>
+    window.__woetBooted = false;
+    setTimeout(function () {
+      if (!window.__woetBooted) {
+        var m = document.getElementById("menu");
+        if (m) m.innerHTML =
+          '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#10150f;color:#d8d2c0;font-family:Georgia,serif;text-align:center;padding:40px">' +
+          '<div style="font-size:26px;letter-spacing:2px">WAR OF THE EAST</div>' +
+          '<div style="font-size:15px;color:#b99">The game module failed to start.</div>' +
+          '<div style="font-size:13px;color:#8a7f6a;max-width:520px;line-height:1.6">' +
+            'This usually means the page was opened directly (file://) — ES modules need a local web server.<br/>' +
+            'Inside the <b>game</b> folder run: <code style="color:#d9b44a">python -m http.server 8137</code><br/>then open <a style="color:#d9b44a" href="http://localhost:8137/index.html">http://localhost:8137/index.html</a>' +
+          '</div><div style="font-size:12px;color:#655c4a">(the server is already running — just use the URL above, not the file)</div>' +
+          '</div>';
+      }
+    }, 2500);
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

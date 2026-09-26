@@ -1,0 +1,203 @@
+// WAR OF THE EAST — renderer.js
+// Canvas 2D: terrain, buildings, units, projectiles, selection, build ghost.
+// Camera: cam.x/y (world px at canvas top-left), cam.zoom.
+import { TILE, MAP_W, MAP_H, FACTION_META, BUILDINGS } from "./config.js";
+import { T } from "./rand.js";
+import { SPRITES, TILES, unitSpriteKey, bSpriteKey } from "./sprites.js";
+
+export class Renderer {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.g = canvas.getContext("2d");
+    this.cam = { x: 0, y: 0, zoom: 1 };
+    this.buildGhost = null;   // {id, tx, ty, ok}
+    this.dragSel = null;      // {x,y,w,h} in CSS px — synced from input
+    this.hover = { tx: -1, ty: -1 };
+  }
+  resize() {
+    const dpr = window.devicePixelRatio || 1;
+    this.cv.width = this.cv.clientWidth * dpr;
+    this.cv.height = this.cv.clientHeight * dpr;
+    this.dpr = dpr;
+  }
+  screenToWorld(sx, sy) {
+    const r = this.cv.getBoundingClientRect();
+    return {
+      x: (sx - r.left) / this.cam.zoom + this.cam.x,
+      y: (sy - r.top) / this.cam.zoom + this.cam.y,
+    };
+  }
+  clampCam(game) {
+    const vw = this.cv.clientWidth / this.cam.zoom;
+    const vh = this.cv.clientHeight / this.cam.zoom;
+    const ww = MAP_W * TILE, wh = MAP_H * TILE;
+    this.cam.x = Math.max(0, Math.min(ww - vw, this.cam.x));
+    this.cam.y = Math.max(0, Math.min(wh - vh, this.cam.y));
+  }
+  draw(game) {
+    const g = this.g, c = this.cam, z = c.zoom;
+    // clear last frame, then apply camera transform
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = "#10150d";
+    g.fillRect(0, 0, this.cv.width, this.cv.height);
+    g.setTransform(this.dpr * z, 0, 0, this.dpr * z, -c.x * z * this.dpr, -c.y * z * this.dpr);
+    // visible tile range
+    const x0 = Math.max(0, Math.floor(c.x / TILE) - 1);
+    const y0 = Math.max(0, Math.floor(c.y / TILE) - 1);
+    const x1 = Math.min(MAP_W - 1, Math.ceil((c.x + this.cv.clientWidth / z) / TILE) + 1);
+    const y1 = Math.min(MAP_H - 1, Math.ceil((c.y + this.cv.clientHeight / z) / TILE) + 1);
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++)
+        this.drawTile(game, tx, ty);
+    // build ghost
+    if (this.buildGhost) this.drawGhost(game);
+    // selection rings under units
+    for (const e of game.units) if (e.selected) this.ring(e, "#ffe873");
+    for (const b of game.buildings) if (!b.dead && b.selected) this.bRing(b, "#ffe873");
+    // buildings
+    for (const b of game.buildings) if (!b.dead) this.drawBuilding(game, b);
+    // units
+    for (const u of game.units) if (!u.dead) this.drawUnit(game, u);
+    // projectiles on top
+    for (const p of game.projectiles) this.drawProjectile(p);
+    // rubber-band selection box (screen space)
+    if (this.dragSel) {
+      g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      g.strokeStyle = "#ffe873"; g.lineWidth = 1;
+      g.fillStyle = "rgba(255,232,115,0.12)";
+      const s = this.dragSel;
+      g.fillRect(s.x, s.y, s.w, s.h);
+      g.strokeRect(s.x + 0.5, s.y + 0.5, s.w, s.h);
+    }
+    this.ox = null;
+  }
+  drawTile(game, tx, ty) {
+    const g = this.g;
+    const t = game.map.tiles[ty * game.map.w + tx] || 0;
+    let img = t === T.ORE ? TILES.ore : t === T.OIL ? TILES.oil : t === T.ROCK ? TILES.rock : t === T.TREE ? TILES.tree : TILES.grass;
+    g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
+  }
+  drawBuilding(game, b) {
+    const g = this.g;
+    const img = SPRITES[bSpriteKey(b.fac, b.cfg)];
+    const W = b.w * TILE, H = b.h * TILE;
+    const ex = b.tx * TILE, ey = b.ty * TILE;
+    if (img) g.drawImage(img, ex, ey, W, H);
+    else { g.fillStyle = FACTION_META[b.fac].color; g.fillRect(ex + 2, ey + 2, W - 4, H - 4); }
+    // under-construction overlay + progress
+    if (b.underConstruction()) {
+      g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(ex, ey, W, H);
+      const pct = Math.min(1, b.buildT / (b.built || 1));
+      g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
+      g.fillStyle = "#e8c840"; g.fillRect(ex + 1, ey - 6, (W - 2) * pct, 3);
+    }
+    // underpowered flash
+    if (b.underpowered && Math.floor(game.time * 2) % 2 === 0) {
+      g.fillStyle = "rgba(255,80,40,0.25)"; g.fillRect(ex, ey, W, H);
+    }
+    // production bar
+    if (b.queue.length) {
+      const cur = b.queue[0];
+      const pct = Math.min(1, b.queueTimer / ((cur._cfg && cur._cfg.time) || 1));
+      g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
+      g.fillStyle = "#8fd463"; g.fillRect(ex + 1, ey - 6, (W - 2) * pct, 3);
+    }
+    // capture bar
+    if (b.capByFac && b.capByFac !== b.fac && b.capHp < b.maxHp) {
+      const cp = Math.min(1, (b.maxHp - b.capHp) / Math.max(1, b.maxHp));
+      g.fillStyle = "#222"; g.fillRect(ex, ey - 13, W, 5);
+      g.fillStyle = FACTION_META[b.capByFac].accent; g.fillRect(ex + 1, ey - 12, (W - 2) * cp, 3);
+    }
+    // hp bar when damaged
+    if (b.hp < b.maxHp) {
+      g.fillStyle = "#111"; g.fillRect(ex + 3, ey + H - 5, W - 6, 3);
+      g.fillStyle = hpCol(b.hp / b.maxHp); g.fillRect(ex + 3, ey + H - 5, (W - 6) * (b.hp / b.maxHp), 3);
+    }
+  }
+  drawUnit(game, u) {
+    const g = this.g;
+    const img = SPRITES[unitSpriteKey(u.cfg)];
+    const fp = u.footprint() * 2;
+    if (img) {
+      // face movement direction
+      g.save();
+      g.translate(u.x, u.y);
+      const ang = u.moving || u.target ? Math.atan2((u.target ? u.target.y : (u.path && u.path[0] ? u.path[0].y : u.y)) - u.y, (u.target ? u.target.x : (u.path && u.path[0] ? u.path[0].x : u.x + 1)) - u.x) : (u._dir || 0);
+      if (u.isAir()) ang += Math.PI;
+      g.rotate(ang);
+      g.drawImage(img, -fp / 2 - 2, -fp / 2 - 2, fp + 4, fp + 4);
+      g.restore();
+    }
+    if (u.spawnTimer > 0) { g.globalAlpha = 0.5 + 0.5 * Math.sin(game.time * 20); }
+    // hp bar
+    if (u.hp < u.maxHp || u.selected) {
+      g.fillStyle = "#111"; g.fillRect(u.x - 10, u.y - fp / 2 - 6, 20, 3);
+      g.fillStyle = hpCol(u.hp / u.maxHp); g.fillRect(u.x - 10, u.y - fp / 2 - 6, 20 * (u.hp / u.maxHp), 3);
+    }
+    // fuel bar
+    if (u.maxT > 0 && u.t < u.maxT - 1) {
+      g.fillStyle = "#333"; g.fillRect(u.x - 10, u.y + fp / 2 + 2, 20, 2);
+      g.fillStyle = "#e8c840"; g.fillRect(u.x - 10, u.y + fp / 2 + 2, 20 * (u.t / u.maxT), 2);
+    }
+    g.globalAlpha = 1;
+  }
+  drawProjectile(p) {
+    const g = this.g;
+    const t = Math.hypot(p.tx - p.x, p.ty - p.y) || 1;
+    g.strokeStyle = p.cls === "air" ? "#9fd8ff" : p.cls === "def" ? "#ffd9a0" : "#ffe9a8";
+    g.lineWidth = p.cls === "tank" ? 2.4 : 1.6;
+    g.beginPath();
+    g.moveTo(p.x - (p.tx - p.x) / t * 6, p.y - (p.ty - p.y) / t * 6);
+    g.lineTo(p.x, p.y);
+    g.stroke();
+    g.fillStyle = "#fff2c0";
+    g.beginPath(); g.arc(p.x, p.y, 1.6, 0, 6.29); g.fill();
+  }
+  ring(e, col) {
+    const g = this.g;
+    g.strokeStyle = col; g.lineWidth = 1.4;
+    g.beginPath(); g.arc(e.x, e.y, e.footprint() + 3 + Math.sin(e.anim) * 0.001, 0, 6.29); g.stroke();
+  }
+  bRing(b, col) {
+    const g = this.g;
+    g.strokeStyle = col; g.lineWidth = 2;
+    g.strokeRect(b.tx * TILE + 1, b.ty * TILE + 1, b.w * TILE - 2, b.h * TILE - 2);
+  }
+  drawGhost(game) {
+    const gh = this.buildGhost;
+    if (!gh) return;
+    const cfg = BUILDINGS[gh.id];
+    if (!cfg) return;
+    const g = this.g;
+    const W = (cfg.w || 1) * TILE, H = (cfg.h || 1) * TILE;
+    const ex = gh.tx * TILE, ey = gh.ty * TILE;
+    // real sprite ghost
+    const img = SPRITES[bSpriteKey(game.player, cfg)];
+    g.globalAlpha = 0.55;
+    if (img) g.drawImage(img, ex, ey, W, H);
+    else { g.fillStyle = gh.ok ? "#7fd45f" : "#d45f5f"; g.fillRect(ex, ey, W, H); }
+    // tint overlay so validity reads at a glance
+    g.globalAlpha = 0.30;
+    g.fillStyle = gh.ok ? "#7fd45f" : "#d45f5f";
+    g.fillRect(ex, ey, W, H);
+    g.globalAlpha = 1;
+    g.strokeStyle = gh.ok ? "#bff5a0" : "#f5b0b0";
+    g.lineWidth = 1.5;
+    g.strokeRect(ex + 0.5, ey + 0.5, W - 1, H - 1);
+    // cost + name label above the ghost
+    const cost = cfg.cost;
+    const label = `${cfg.name}${cost ? "  " + Object.entries(cost).filter(([, v]) => v > 0).map(([k, v]) =>
+      v + (k === "tin" ? "◆" : k === "steel" ? "✚" : "⛽")).join(" ") : ""}`;
+    g.font = "11px monospace";
+    const tw = g.measureText(label).width;
+    const lx = Math.max(0, Math.min(this.cv.clientWidth / this.cam.zoom - 8, ex + W / 2));
+    const ly = Math.max(12, ey - 8);
+    g.fillStyle = "rgba(0,0,0,0.65)";
+    g.fillRect(lx - tw / 2 - 4, ly - 13, tw + 8, 15);
+    g.fillStyle = gh.ok ? "#d8f0c0" : "#f0d0d0";
+    g.textAlign = "center";
+    g.fillText(label, lx, ly - 1);
+    g.textAlign = "left";
+  }
+}
+function hpCol(p) { return p > 0.5 ? "#7fd45f" : p > 0.25 ? "#e8c840" : "#d45f5f"; }

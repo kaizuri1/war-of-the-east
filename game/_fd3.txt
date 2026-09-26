@@ -1,0 +1,43 @@
+### sprites.js buildTiles..end (from idx 13221)
+export function buildTiles() {
+  // grass
+  let { c, g } = mkCanvas(32, 32);
+  g.fillStyle = "#6b8a4a"; g.fillRect(0, 0, 32, 32);
+  g.fillStyle = "rgba(90,120,60,.6)";
+  for (let i = 0; i < 22; i++) g.fillRect(Math.random() * 30, Math.random() * 30, 2, 2);
+  g.fillStyle = "rgba(60,86,40,.5)";
+  for (let i = 0; i < 10; i++) g.fillRect(Math.random() * 30, Math.random() * 30, 3, 2);
+  TILES.grass = c;
+  // ore
+  ({ c, g } = mkCanvas(32, 32));
+  TILES.grass.getContext("2d").drawImage ? null : null;
+  g.drawImage(TILES.grass, 0, 0);
+  g.fillStyle = "#c77b32";
+  g.beginPath(); g.moveTo(10, 24); g.lineTo(16, 8); g.lineTo(22, 24); g.closePath(); g.fill();
+  g.fillStyle = "#8a5220";
+  g.beginPath(); g.moveTo(20, 26); g.lineTo(25, 14); g.lineTo(29, 26); g.closePath(); g.fill();
+  TILES.ore = c;
+  // oil
+  ({ c, g } = mkCanvas(32, 32));
+  g.drawImage(TILES.grass, 0, 0);
+  g.fillStyle = "#1c1a17";
+  g.beginPath(); g.ellipse(16, 16, 12, 9, 0.3, 0, 7); g.fill();
+  g.fillStyle = "rgba(90,70,40,.5)"; g.beginPath(); g.ellipse(13, 13, 3, 2, 0.3, 0, 7); g.fill();
+  TILES.oil = c;
+  // rock
+  ({ c, g } = mkCanvas(32, 32));
+  g.drawImage(TILES.grass, 0, 0);
+  g.fillStyle = "#77746e";
+  g.beginPath(); g.moveTo(6, 26); g.lineTo(13, 8); g.lineTo(24, 12); g.lineTo(27, 25); g.closePath(); g.fill();
+  g.fillStyle = "#98948c";
+  g.beginPath(); g.moveTo(13, 8); g.lineTo(20, 10); g.lineTo(16, 18); g.closePath(); g.fill();
+  TILES.rock = c;
+  // tree
+  ({ c, g } = mkCanvas(32, 32));
+  g.drawImage(TILES.grass, 0, 0);
+  g.fillStyle = "#5a4632"; g.fillRect(14, 20, 4, 8);
+  g.fillStyle = "#3a5c2a"; g.beginPath(); g.arc(16, 13, 11, 0, 7); g.fill();
+  g.fillStyle = "#4a7033"; g.beginPath(); g.arc(12, 9, 6, 0, 7); g.arc(21, 10, 5, 0, 7); g.fill();
+  TILES.tree = c;
+  return TILES;
+}

@@ -1,0 +1,7 @@
+# local test scripts
+_*.mjs
+_*.py
+
+# OS junk
+.DS_Store
+Thumbs.db

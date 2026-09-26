@@ -1,0 +1,142 @@
+### ui.js L1-110
+1| // WAR OF THE EAST — ui.js
+2| // C&C-style HUD:
+3| //   • top resource strip (time / tin / steel / fuel / power / army)
+4| //   • RIGHT-side vertical COMMAND PANEL with tabs:
+5| //        INFANTRY · VEHICLES · RESEARCH · BUILDINGS
+6| //   • bottom-left minimap + selection/status panel
+7| // Talks to the real engine:
+8| //   fac state  : game.fac[game.player] = { res{tin,steel,fuel}, power{gen,draw,ok},
+9| //                upgrades:Set }
+10| //   commands   : game.canBuild, game.startBuild, game.queueUnit,
+11| //                game.canResearch, game.research, game.unitAvailable,
+12| //                game.hasLab, game.tierNum, game.canAfford
+13| //   selection  : game.units[].selected / game.buildings[].selected
+14| //   camera     : r.cam {x,y,zoom}, canvas css size -> minimap viewport
+15| /* global document, window */
+16| import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META } from "./config.js";
+17| import { T } from "./rand.js";
+18| import { unitSpriteKey, bSpriteKey, SPRITES } from "./sprites.js";
+19| 
+20| // unit class -> the factory `produces` value that can build it
+21| const CLASS_PROD = { infantry: "infantry", tank: "armor", gun: "guns", air: "air" };
+22| 
+23| export class UI {
+24|   constructor(root, game, canvas, input) {
+25|     this.root = root;
+26|     this.g = game;
+27|     this.cv = canvas;
+28|     this.r = canvas.__renderer || null; // renderer set from main.js
+29|     this.in = input;
+30|     this.input = input;          // alias for convenience
+31|     this.tab = "BUILDINGS";
+32|     this._th = new Map();       // id -> data-url thumbnail
+33|     this._buildId = null;
+34| 
+35|     // NOTE: root hosts the main game canvas (#view). Wiping innerHTML removes
+36|     // it, so the renderer would draw to a detached canvas -> black screen.
+37|     // Re-append the canvas after the wipe.
+38|     const keep = root.querySelector("#view") || this.cv;
+39| 
+40|     root.innerHTML = `
+41|       <div id="res"></div>
+42|       <div id="hud-match"></div>
+43|       <div id="command">
+44|         <div id="cmdTabs"></div>
+45|         <div id="cmdBody" class="cmd-scroll"></div>
+46|       </div>
+47|       <div id="hud-bottom">
+48|         <div id="mmwrap">
+49|           <canvas id="minimap" width="180" height="180"></canvas>
+50|         </div>
+51|         <div id="sel"></div>
+52|       </div>
+53|       <div id="over" class="hidden">
+54|         <div class="over-card">
+55|           <div class="over-title"></div>
+56|           <div class="over-sub"></div>
+57|           <button class="overbtn" id="overRestart">RESTART — ENTER</button>
+58|         </div>
+59|       </div>`;
+60| 
+61|     if (keep) root.appendChild(keep); // restore the game canvas (was wiped above)
+62| 
+63|     const match = root.querySelector("#hud-match");
+64|     if (match) match.textContent =
+65|       `${game.playerName} vs ${game.aiName} · ${game.map.name || "field"}` +
+66|       (game.diff ? ` · AI ${game.diff.label}` : "");
+67| 
+68|     this.mm = root.querySelector("#minimap");
+69|     this.mctx = this.mm.getContext("2d");
+70|     this.buildTabs();
+71|     this.bindBody();
+72|     this.refresh();
+73|   }
+74|   attachRenderer(r) { this.r = r; }
+75|   attachSfx() { this._sfx = this.g._sfx; }
+76|   // keep input.buildItem in sync with what the cards highlight
+77|   setBuildActive(id) { this._buildId = id; if (this.input) this.input.buildItem = id; }
+78| 
+79|   // ---- tabs -------------------------------------------------------------
+80|   buildTabs() {
+81|     const tabs = [
+82|       ["BUILDINGS", "B", "Building Production"],
+83|       ["INFANTRY", "I", "Infantry & crews"],
+84|       ["VEHICLES", "V", "Tanks, guns, aircraft"],
+85|       ["RESEARCH", "R", "Upgrades (needs Lab)"],
+86|     ];
+87|     const el = this.root.querySelector("#cmdTabs");
+88|     el.innerHTML = tabs.map(([id, k, tip]) =>
+89|       `<div class="cmd-tab" data-tab="${id}" title="${tip}"><span class="ct-label">${id}</span><kbd>${k}</kbd></div>`
+90|     ).join("");
+91|     el.addEventListener("click", (e) => {
+92|       const t = e.target.closest(".cmd-tab");
+93|       if (!t) return;
+94|       this.tab = t.dataset.tab;
+95|       this.beep("click"); this.refresh();
+96|     });
+97|     // hotkeys B/I/V/R
+98|     window.addEventListener("keydown", (e) => {
+99|       if (this.g && !this.g.winner && !e.ctrlKey && !e.altKey && !e.metaKey && document.activeElement.tagName !== "INPUT") {
+100|         const map = { b: "BUILDINGS", i: "INFANTRY", v: "VEHICLES", r: "RESEARCH" };
+101|         const k = e.key.toLowerCase();
+102|         if (map[k] && map[k] !== this.tab) { this.tab = map[k]; this.beep("click"); this.refresh(); }
+103|       }
+104|     });
+105|   }
+106|   bindBody() {
+107|     const body = this.root.querySelector("#cmdBody");
+108|     body.addEventListener("click", (e) => {
+109|       const it = e.target.closest(".card");
+110|       if (!it) return;
+### ui showOver block
+showOver(winner) {
+    const g = this.g;
+    const win = winner === g.player;
+    const ov = this.root.querySelector("#over");
+    ov.querySelector(".over-title").textContent = win ? "VICTORY — 大捷" : "DEFEAT — 敗北";
+    ov.querySelector(".over-title").className = "over-title " + (win ? "win" : "lose");
+    ov.querySelector(".over-sub").textContent = win
+      ? `The enemy depot has fallen. ${g.playerName} holds the East.`
+      : `Your depot has fallen. ${g.aiName} takes the East.`;
+    ov.classList.remove("hidden");
+    if (!this._overBound) {
+      this._overBound = true;
+      const restart = () => location.reload();
+      ov.querySelector("#overRestart").addEventListener("click", restart);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && g.winner) restart();
+      });
+    }
+  }  // engine already played "win" at the winning moment
+  // Per-frame light
+### ui attachSfx block
+attachSfx() { this._sfx = this.g._sfx; }
+  // keep input.buildItem in sync with what the cards highlight
+  setBuildActive(id) { this._buildId = id; if (this.input) this.input.buildItem = id; }
+
+  // ---- tabs -------------------------------------------------------------
+  buildTabs() {
+    const tabs = [
+      ["BUILDINGS", "B", "Building Production"],
+      ["INFANTRY", "I", "Infantry & crews"],

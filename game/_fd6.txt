@@ -1,0 +1,83 @@
+### CONFIG: MAPS block
+export const MAPS = [
+  { id: "m1937", name: "Marco Polo Bridge '37", w: 45, h: 45, seed: 20260924 },
+  { id: "m1938", name: "Shandong Front '38",    w: 60, h: 60, seed: 19381115 },
+  { id: "m1940", name: "Yangtze Delta '40",      w: 80, h: 60, seed: 19400720 },
+  { id: "m1944", name: "Burma Road '44",         w: 70, h: 40, seed: 19440201 },
+];
+
+export const FACS = ["china", "japan"];
+
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRate: 25,               // fuel/s at own refinery / tank factory
+  refuelRadius: 64,             // px — how close a tank must be to refill
+  aiWaveInterval: 45,
+  aiAggroMin: 4,
+  maxUnitsPerSide: 120,
+  zoomMin: 0.5, zoomMax: 2.0,
+  basePower: 80,
+  baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+};
+### CONFIG: FACTION_META block
+FACTION_META = {
+  china: { label: "CHINA — Republic of China", color: "#3f7a3f", dark: "#2c5a2c", accent: "#c9a227" },
+  japan: { label: "JAPAN — Empire of Japan",  color: "#5a5f4a", dark: "#3c4032", accent: "#b8452f" },
+};
+
+### CONFIG: TUNE block
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRate: 25,               // fuel/s at own refinery / tank factory
+  refuelRadius: 64,             // px — how close a tank must be to refill
+  aiWaveInterval: 45,
+  aiAggroMin: 4,
+  maxUnitsPerSide: 120,
+  zoomMin: 0.5, zoomMax: 2.0,
+  basePower: 80,
+  baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+};
+### CONFIG: RES_TIERS/AI_DIFF/START block
+W = 60;   // tiles
+export const MAP_H = 60;
+export const WORLD_W = MAP_W * TILE;
+export const WORLD_H = MAP_H * TILE;
+
+export const RES = {
+  TIN: "tin", STEEL: "steel", FUEL: "fuel"
+};
+
+export const START = {
+  tin: 2200, steel: 250, fuel: 250,
+  seed: 20260924
+};
+
+// Resource spawn tiers — SKIRMISH "starting funds", applied to BOTH factions.
+export const RES_TIERS = {
+  low:    { label: "LOW",    tin: 1100, steel: 125, fuel: 125 },
+  medium: { label: "MEDIUM", tin: 2200, steel: 250, fuel: 250 },
+  high:   { label: "HIGH",   tin: 3600, steel: 400, fuel: 400 },
+  max:    { label: "MAX",    tin: 5000, steel: 600, fuel: 600 },
+};
+
+// AI difficulty (applied to every AI-faction in the match).
+export const AI_DIFF = {
+  easy:   { label: "EASY",   waveGap: 150, nextWave: 110, strength: 1.5,  resourceMult: 0.8,  incomeMult: 0.85, preResearch: [] },
+  medium: { label: "MEDIUM", waveGap: 90,  nextWave: 60,  strength: 1.0,  resourceMult: 1.0,  incomeMult: 1.0,  preResearch: [] },
+  hard:   { lab

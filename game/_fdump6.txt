@@ -1,0 +1,335 @@
+## menu.js L84-135:
+|85|    b.addEventListener("click", () => {
+|86|      for (const x of y.children) x.classList.remove("on");
+|87|      b.classList.add("on");
+|88|      set(val);
+|89|      beep(360, 440, 0.03, "sine", 0.02);
+|90|    });
+|91|    y.appendChild(b);
+|92|  }
+|93|  row.appendChild(y);
+|94|  parent.appendChild(row);
+|95|}
+|96|
+|97|const summary = () => document.querySelector("#sk-summary");
+|98|function syncSummary() {
+|99|  const el = summary();
+|100|  if (!el) return;
+|101|  const f = document.querySelector("#sk-fac .on")?.dataset.v || "china";
+|102|  const ai = document.querySelector("#sk-ai .on")?.dataset.v || "japan";
+|103|  const r = document.querySelector("#sk-res .on")?.dataset.v || "medium";
+|104|  const d = document.querySelector("#sk-diff .on")?.dataset.v || "medium";
+|105|  const map = document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id;
+|106|  const m = MAPS.find((x) => x.id === map) || MAPS[0];
+|107|  el.textContent =
+|108|    `${FACTION_META[f].nameEN} vs ${FACTION_META[ai].nameEN} — ${m.name} — ` +
+|109|    `funds ${r.toUpperCase()} — AI ${AI_DIFF[d].label}`;
+|110|}
+|111|
+|112|function markAiWarning() {
+|113|  const mine = document.querySelector("#sk-fac .on")?.dataset.v;
+|114|  document.querySelector("#sk-ai .on")?.classList.toggle("warn", mine && mine === document.querySelector("#sk-ai .on").dataset.v);
+|115|}
+|116|
+|117|// ================================================================
+|118|export function bootMenu(h) {
+|119|  handlers = h;
+|120|  loadSettings();
+|121|  TUNE.shake = MENU.S.shake;          // apply saved preferences
+|122|  sfx && applySfx();
+|123|
+|124|  if (!document.querySelector("#menu h1")) {
+|125|    const root = document.querySelector("#menu");
+|126|    root.innerHTML = `
+|127|      <div class="menu-screen" id="ms-title">
+|128|        <div class="title-top">
+|129|          <div id="title-deco"></div>
+|130|          <h1 class="title-main">WAR OF THE EAST</h1>
+|131|          <div class="title-sub">東洋戦争 · 1937–1945</div>
+|132|          <div class="title-tag">A Command &amp; Conquer-style browser RTS</div>
+|133|        </div>
+|134|        <div id="title-menu">
+|135|          <button class="menu-item on" id="mi-skmish">SKIRMISH</button>
+|136|          <button class="menu-item" id="mi-mission" title="Mission mode arrives with a campaign data pack — greyed out for now.">
+
+## menu.js L164-365:
+|165|      (!document.getElementById("ms-skirmish").hidden || !document.getElementById("ms-settings").hidden)) {
+|166|    beep(500, 320, 0.05, "triangle");
+|167|    show(0);
+|168|  }
+|169|}
+|170|
+|171|// ================================================================
+|172|function buildSkirmish() {
+|173|  const el = document.getElementById("ms-skirmish");
+|174|  if (el.dataset.built) return;
+|175|  el.dataset.built = "1";
+|176|  el.innerHTML = `
+|177|    <div class="menu-head">
+|178|      <button class="menu-back" id="sk-back">&larr; MAIN MENU</button>
+|179|      <h2>SKIRMISH</h2>
+|180|      <div class="menu-spacer"></div>
+|181|    </div>
+|182|    <div class="menu-grid">
+|183|      <div class="menu-box">
+|184|        <h3>BATTLEFIELD</h3>
+|185|        <div class="menu-hint">seeded — the same map always looks the same</div>
+|186|        <div id="sk-maps" class="menu-maplist"></div>
+|187|      </div>
+|188|      <div class="menu-box">
+|189|        <h3>YOUR FACTION</h3>
+|190|        <div id="sk-fac" class="menu-facs"></div>
+|191|        <h3 class="mt2">ENEMY AI FACTION</h3>
+|192|        <div class="menu-hint">one computer opponent controls this faction</div>
+|193|        <div id="sk-ai" class="menu-facs"></div>
+|194|      </div>
+|195|      <div class="menu-box">
+|196|        <h3>STARTING FUNDS</h3>
+|197|        <div id="sk-res"></div>
+|198|        <div id="sk-resinfo" class="menu-info"></div>
+|199|        <h3 class="mt2">AI DIFFICULTY</h3>
+|200|        <div id="sk-diff"></div>
+|201|        <div id="sk-diffinfo" class="menu-info"></div>
+|202|      </div>
+|203|    </div>
+|204|    <div id="sk-summary" class="menu-summary"></div>
+|205|    <div class="menu-foot">
+|206|      <button class="menu-start" id="sk-start">&#9654; START BATTLE</button>
+|207|    </div>`;
+|208|
+|209|  // --- map picker ---
+|210|  const mapsEl = document.getElementById("sk-maps");
+|211|  MAPS.forEach((m, i) => {
+|212|    const c = document.createElement("div");
+|213|    c.className = "menu-map" + (i === 0 ? " on" : "");
+|214|    c.dataset.v = m.id;
+|215|    const cv = document.createElement("canvas");
+|216|    cv.width = 120; cv.height = 90;
+|217|    c.appendChild(cv);
+|218|    const d = document.createElement("div");
+|219|    d.className = "menu-mapd";
+|220|    d.innerHTML = `<b>${m.name}</b><span>${m.w}×${m.h} · seed ${m.seed}</span>`;
+|221|    c.appendChild(d);
+|222|    c.addEventListener("click", () => {
+|223|      beep(430, 430, 0.03, "sine", 0.02);
+|224|      for (const x of mapsEl.children) x.classList.remove("on");
+|225|      c.classList.add("on");
+|226|      syncSummary();
+|227|    });
+|228|    mapsEl.appendChild(c);
+|229|    mapThumb(cv, m);
+|230|  });
+|231|
+|232|  // --- faction pickers ---
+|233|  const facValues = Object.keys(FACTION_META).map((k) => ({ id: k, label: FACTION_META[k].nameEN }));
+|234|  segRow(document.getElementById("sk-fac"), facValues, "china", markAiWarning);
+|235|  segRow(document.getElementById("sk-ai"), facValues, "japan", null);
+|236|  // make the (now-stale) ai click handler also re-warn — segRow bound cb=null;
+|237|  for (const b of document.getElementById("sk-ai").children) {
+|238|    b.addEventListener("click", markAiWarning);
+|239|  }
+|240|
+|241|  // --- resource tiers ---
+|242|  const resInfo = {
+|243|    low: "Lean start — expand fast or die trying.",
+|244|    medium: "The intended opening balance.",
+|245|    high: "Comfortable economy — production early.",
+|246|    max: "Maxed treasury — full war economy immediately.",
+|247|  };
+|248|  segRow(document.getElementById("sk-res"),
+|249|    Object.keys(RES_TIERS).map((k) => ({ id: k, label: k[0].toUpperCase() + k.slice(1) })),
+|250|    "medium", (id) => {
+|251|      const t = RES_TIERS[id];
+|252|      document.getElementById("sk-resinfo").textContent =
+|253|        `tin ${t.tin.toLocaleString()} · steel ${t.steel.toLocaleString()} · fuel ${t.fuel.toLocaleString()} — ${resInfo[id]}`;
+|254|    });
+|255|  document.getElementById("sk-res .on")?.dispatchEvent(new Event("click"));
+|256|
+|257|  // --- difficulty ---
+|258|  const diffInfo = {
+|259|    easy: "Slow waves, cheaper economy — a gentle introduction.",
+|260|    medium: "Balanced pace — the intended experience.",
+|261|    hard: "Fast, well-funded waves; the AI rushes heavy units.",
+|262|  };
+|263|  segRow(document.getElementById("sk-diff"),
+|264|    ["easy", "medium", "hard"].map((k) => ({ id: k, label: k.toUpperCase() })),
+|265|    "medium", (id) => {
+|266|      const d = AI_DIFF[id];
+|267|      document.getElementById("sk-diffinfo").textContent =
+|268|        `waves every ${d.waveGap}s · AI funds ×${d.resourceMult} · AI economy ×${d.incomeMult} — ${diffInfo[id]}`;
+|269|    });
+|270|  document.getElementById("sk-diff .on")?.dispatchEvent(new Event("click"));
+|271|
+|272|  document.getElementById("sk-back").addEventListener("click", () => {
+|273|    beep(500, 320, 0.05, "triangle");
+|274|    show(0);
+|275|  });
+|276|  document.getElementById("sk-start").addEventListener("click", () => {
+|277|    const sel = {
+|278|      player: document.querySelector("#sk-fac .on")?.dataset.v || "china",
+|279|      aiFac: document.querySelector("#sk-ai .on")?.dataset.v || "japan",
+|280|      res: document.querySelector("#sk-res .on")?.dataset.v || "medium",
+|281|      diff: document.querySelector("#sk-diff .on")?.dataset.v || "medium",
+|282|      map: MAPS.find((m) => m.id === (document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id)) || MAPS[0],
+|283|    };
+|284|    started = true;
+|285|    beep(620, 920, 0.12, "triangle", 0.03);
+|286|    handlers.onStart(sel);
+|287|  });
+|288|}
+|289|
+|290|// ================================================================
+|291|function buildSettings() {
+|292|  const el = document.getElementById("ms-settings");
+|293|  if (el.dataset.built) { refreshCamLabel(); return; }
+|294|  el.dataset.built = "1";
+|295|  el.innerHTML = `
+|296|    <div class="menu-head">
+|297|      <button class="menu-back" id="st-back">&larr; MAIN MENU</button>
+|298|      <h2>SETTINGS</h2>
+|299|      <div class="menu-spacer"></div>
+|300|    </div>
+|301|    <div class="menu-grid">
+|302|      <div class="menu-box">
+|303|        <h3>AUDIO</h3>
+|304|        <div id="st-audio"></div>
+|305|      </div>
+|306|      <div class="menu-box">
+|307|        <h3>GAMEPLAY</h3>
+|308|        <div id="st-game"></div>
+|309|      </div>
+|310|      <div class="menu-box">
+|311|        <h3>LAST CAMERA</h3>
+|312|        <p id="st-cam" class="menu-info">not yet saved</p>
+|313|        <div class="menu-hint">the view position is saved when a game ends</div>
+|314|      </div>
+|315|    </div>
+|316|    <div class="menu-foot"><button class="menu-start" id="st-close">DONE</button></div>`;
+|317|
+|318|  toggleRow(document.getElementById("st-audio"), "Music", () => !MENU.S.musicMuted, (v) => {
+|319|    MENU.S.musicMuted = !v; sfx && (sfx.musicMuted = MENU.S.musicMuted); saveSettings();
+|320|  });
+|321|  toggleRow(document.getElementById("st-audio"), "SFX volume", () => MENU.S.sfxVol > 0, (v) => {
+|322|    MENU.S.sfxVol = v ? 1 : 0.25; applySfx(); saveSettings();
+|323|  });
+|324|
+|325|  toggleRow(document.getElementById("st-game"), "Screen shake", () => MENU.S.shake, (v) => {
+|326|    MENU.S.shake = v; TUNE.shake = v; saveSettings();
+|327|  });
+|328|  toggleRow(document.getElementById("st-game"), "Show grid (debug)", () => MENU.S.showGrid, (v) => {
+|329|    MENU.S.showGrid = v; saveSettings();
+|330|  });
+|331|
+|332|  document.getElementById("st-back").addEventListener("click", () => { beep(500, 320, 0.05, "triangle"); show(0); });
+|333|  document.getElementById("st-close").addEventListener("click", () => { beep(500, 322, 0.05, "triangle"); show(0); });
+|334|  refreshCamLabel();
+|335|}
+|336|
+|337|function refreshCamLabel() {
+|338|  const el = document.getElementById("st-cam");
+|339|  if (!el) return;
+|340|  el.textContent = MENU.S.camX != null
+|341|    ? `saved at tile (${Math.floor(MENU.S.camX / 32)}, ${Math.floor((MENU.S.camY || 0) / 32)})`
+|342|    : "not yet saved";
+|343|}
+|344|
+|345|// main.js calls this once the sound system exists (or after settings edits)
+|346|export function setSfx(ref) {
+|347|  sfx = ref;
+|348|  applySfx();
+|349|}
+|350|function applySfx() {
+|351|  if (!sfx) return;
+|352|  if (sfx.applySettings) sfx.applySettings(MENU.S);
+|353|}
+|354|
+|355|// main.js saves the camera when the game ends so SETTINGS can report it
+|356|export function saveCam(x, y) {
+|357|  MENU.S.camX = x;
+|358|  MENU.S.camY = y;
+|359|  saveSettings();
+|360|  refreshCamLabel();
+|361|}
+|362|
+|363|export function isStarted() { return started; }
+
+## sprites exports:
+export const SPRITE_OVERRIDES = {}; // id -> HTMLImageElement (external)
+export function loadArtOverrides(manifestUrl = "art/sprites/manifest.json") {
+export const SPRITES = {};
+export const _unitKey = new Map(); // unit cfg object -> sprite id
+export const _bId = new Map();     // building cfg object -> building id (sprite key = fac + "_" + id)
+export function unitSpriteKey(cfg) { return _unitKey.get(cfg) || "u_unknown"; }
+export function bSpriteKey(fac, cfg) { return fac + "_" + (_bId.get(cfg) || "depot"); }
+export function buildSprites() {
+export const TILES = { grass: null, ore: null, oil: null, rock: null, tree: null };
+export function buildTiles() {
+
+## sprites fn defs:
+export function loadArtOverrides(manifestUrl = "art/sprites/manifest.json") {
+function mkCanvas(w, h) {
+function shade(hex, amt) {
+function gInfantry(id, fac) {
+function gTank(id, fac) {
+function gGun(id, fac) {
+function gPlane(id, fac) {
+function gBuilding(id, fac) {
+function roundRect(g, x, y, w, h, r) {
+export function unitSpriteKey(cfg) { return _unitKey.get(cfg) || "u_unknown"; }
+export function bSpriteKey(fac, cfg) { return fac + "_" + (_bId.get(cfg) || "depot"); }
+export function buildSprites() {
+export function buildTiles() {
+
+## engine lines:
+|24|  constructor(map, opts = {}) {
+|32|    this.player = opts.player || "china";
+|33|    this.aiFac = this.player === "china" ? "japan" : "china";
+|38|    this.aiName = FACTION_META[this.aiFac].nameEN;
+|39|    this.diff = (opts.diff && AI_DIFF[opts.diff]) || null;
+|45|          tin: (f === this.aiFac ? START.tin * aiMult : START.tin) * (opts.resMult || 1),
+|46|          steel: (f === this.aiFac ? START.steel * aiMult : START.steel) * (opts.resMult || 1),
+|47|          fuel: (f === this.aiFac ? START.fuel * aiMult : START.fuel) * (opts.resMult || 1),
+|49|        incomeMult: f === this.aiFac && this.diff ? this.diff.incomeMult : 1.0,
+|57|  attach(o = {}) { this._sfx = o.sfx || null; this._onWin = o.onWin; }
+|58|  setupBases() {
+|82|        const b = this.startBuild(id, fac, x, y);
+|196|  startBuild(id, fac, tx, ty) {
+|259|              this.startBuild(id, b.fac, b.tx + dx, b.ty + dy);
+
+## ui L1-20:
+|2|// WAR OF THE EAST — ui.js
+|3|// C&C-style HUD:
+|4|//   • top resource strip (time / tin / steel / fuel / power / army)
+|5|//   • RIGHT-side vertical COMMAND PANEL with tabs:
+|6|//        INFANTRY · VEHICLES · RESEARCH · BUILDINGS
+|7|//   • bottom-left minimap + selection/status panel
+|8|// Talks to the real engine:
+|9|//   fac state  : game.fac[game.player] = { res{tin,steel,fuel}, power{gen,draw,ok},
+|10|//                upgrades:Set }
+|11|//   commands   : game.canBuild, game.startBuild, game.queueUnit,
+|12|//                game.canResearch, game.research, game.unitAvailable,
+|13|//                game.hasLab, game.tierNum, game.canAfford
+|14|//   selection  : game.units[].selected / game.buildings[].selected
+|15|//   camera     : r.cam {x,y,zoom}, canvas css size -> minimap viewport
+|16|/* global document, window */
+|17|import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META } from "./config.js";
+|18|import { T } from "./rand.js";
+|19|import { unitSpriteKey, bSpriteKey, SPRITES } from "./sprites.js";
+|20|
+|21|// unit class -> the factory `produces` value that can build it
+
+## ui defs:
+|72|    this.refresh();
+|74|  attachRenderer(r) { this.r = r; }
+|75|  attachSfx() { this._sfx = this.g._sfx; }
+|95|      this.beep("click"); this.refresh();
+|102|        if (map[k] && map[k] !== this.tab) { this.tab = map[k]; this.beep("click"); this.refresh(); }
+|129|    this.refresh();
+|242|  refresh() {
+|272|  showOver(winner) {
+|302|    if (g._gridAcc >= 1) { g._gridAcc = 0; this.refresh(); }
+
+## renderer shake/edge:
+|13|    this.buildGhost = null;   // {id, tx, ty, ok}
+|53|    if (this.buildGhost) this.drawGhost(game);
+|167|    const gh = this.buildGhost;

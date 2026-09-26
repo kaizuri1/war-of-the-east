@@ -1,0 +1,272 @@
+== MAIN.js FULL len 7330 ==
+// War of the East — bootstrap: menu first, then wires config → map → engine →
+// renderer → input → UI → AI, and runs a clamped requestAnimationFrame loop.
+import { TILE, MAP_W, MAP_H, RES_TIERS } from "./config.js";
+import { generateMap } from "./rand.js";
+import { Game } from "./engine.js";
+import { Renderer } from "./renderer.js";
+import { Input } from "./input.js";
+import { UI } from "./ui.js";
+import { AI } from "./ai.js";
+import { buildTiles, buildSprites, loadArtOverrides } from "./sprites.js";
+import { bootMenu } from "./menu.js";
+
+let game, renderer, input, ui, ai, canvas, sfx;
+
+async function boot() {
+  await loadArtOverrides(); // drop-in PNG art if present; silent no-op otherwise
+  buildTiles();
+  buildSprites();
+  canvas = document.getElementById("view");
+  renderer = new Renderer(canvas);
+  renderer.resize();
+  sfx = makeSfx();
+  sfx.applySettings = applySettings;   // hooks up menu SETTINGS sliders
+  bootMenu({ onPlay: playGame });
+}
+
+function applySettings(s) {
+  // s = { sfxVol, musicVol, musicMuted, shake } — applied live.
+  if (s && !sfx) return;
+  if (sfx._setVol) sfx._setVol(s.sfxVol);
+  if (s.fx.shake !== undefined) window.WOE_SHAKE = s.fx.shake !== "off";
+}
+
+// Build a full match from the skirmish setup chosen in the menu, then hand
+// control to the game loop. The menu DOM is cleared by the UI constructor.
+function playGame(cfg) {
+  const map = generateMap({ w: cfg.w, h: cfg.h, seed: cfg.seed });
+  game = new Game(map, { player: cfg.player, diff: cfg.diff, res: cfg.res });
+  game.setupBases();
+
+  renderer.cam.x = 3 * TILE - canvas.clientWidth / 2 / renderer.cam.zoom;
+  renderer.cam.y = 3 * TILE - canvas.clientHeight / 2 / renderer.cam.zoom;
+
+  input = new Input(canvas, game, renderer, null);   // ui backfilled below (circular ctor)
+  input.clampCam();
+  ui = new UI(document.getElementById("game"), game, canvas, input);
+  input.ui = ui;
+  ui.attachRenderer(renderer);
+  game.attach({ sfx, onWin: (w) => ui.showOver(w) });
+  ui.attachSfx();
+  ui.root.setAttribute("tabindex", "0");
+  ui.root.focus();
+  game.onUiTick = (dt) => ui.uiTick(dt);
+  ai = new AI(game, game.aiFac);
+
+  renderer.cam.x = (game.bases?.[cfg.player]?.x ?? 3 * TILE) - canvas.clientWidth / 2 / renderer.cam.zoom;
+  renderer.cam.y = (game.bases?.[cfg.player]?.y ?? 3 * TILE) - canvas.clientHeight / 2 / renderer.cam.zoom;
+  input.clampCam();
+}
+
+// Richer WebAudio SFX: layered oscillators + noise bursts + low drum,
+// tuned per event. No audio assets.
+function makeSfx() {
+  let ctx = null, master = null, noiseBuf = null;
+  const ensure = () => {
+    if (!ctx) {
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        master = ctx.createGain();
+        master.gain.value = 0.9;
+        // simple feedback delay for a bit of space
+        const dl = ctx.createDelay(0.5); dl.delayTime.value = 0.11;
+        const fb = ctx.createGain(); fb.gain.value = 0.18;
+        const dlp = ctx.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 2400;
+        master.connect(ctx.destination);
+        master.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(ctx.destination);
+        // pre-baked 1s white noise
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      } catch (e) { return null; }
+      if (ctx.state === "suspended") ctx.resume();
+    }
+    return ctx;
+  };
+  const env = (g, t, a, d) => { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(1, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); };
+  const osc = (type, f0, f1, a, d, vol, t0 = 0) => {
+    const c = ensure(); if (!c) return;
+    const t = c.currentTime + t0, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t);
+    if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + a + d);
+    env(g, t, a, d); g.gain.setValueAtTime(0.0001, t + a + d + 0.0001);
+    g.gain.connect(master); o.connect(g); o.start(t); o.stop(t + a + d + 0.05);
+  };
+  const noise = (f, a, d, vol, type = "bandpass", t0 = 0) => {
+    const c = ensure(); if (!c) return;
+    const t = c.currentTime + t0, s = c.createBufferSource(); s.buffer = noiseBuf;
+    const flt = c.createBiquadFilter(); flt.type = type; flt.frequency.value = f;
+    const g = c.createGain(); env(g, t, a, d); g.gain.setValueAtTime(0.001, t);
+    g.gain.setValueAtTime(vol, t + a);
+    s.connect(flt); flt.connect(g); g.connect(master); s.start(t); s.stop(t + a + d + 0.05);
+  };
+  return (name) => {
+    const t = ensure(); if (!t) return;
+    switch (name) {
+      case "shot":      // soft muzzle crack: filtered noise + low thump
+        noise(1600, 0.002, 0.06, 0.35, "highpass"); osc("sine", 180, 60, 0.002, 0.08, 0.4); break;
+      case "impact":    // metal impact: short noise + mid click
+        noise(500, 0.002, 0.12, 0.4, "bandpass"); osc("square", 220, 140, 0.002, 0.07, 0.22); break;
+      case "build":     // construction: hammer taps (two low thumps) + wood noise
+        osc("sine", 90, 55, 0.003, 0.09, 0.5); osc("sine", 90, 55, 0.003, 0.09, 0.5, 0.11);
+        noise(300, 0.005, 0.1, 0.2, "bandpass"); break;
+      case "demolish":  // explosion: low boom + long noise tail + sub rumble
+        noise(900, 0.003, 0.35, 0.6, "lowpass"); osc("sine", 70, 30, 0.004, 0.3, 0.7);
+        osc("sawtooth", 55, 25, 0.005, 0.22, 0.3); noise(400, 0.01, 0.25, 0.35, "bandpass", 0.03); break;
+      case "die":       // unit death: quick pitch-drop
+        osc("sawtooth", 300, 70, 0.004, 0.18, 0.35); noise(700, 0.003, 0.1, 0.2, "bandpass"); break;
+      case "research":  // research complete: bright rising two-note sine
+        osc("sine", 520, 780, 0.01, 0.12, 0.4); osc("sine", 780, 1170, 0.01, 0.14, 0.4, 0.09);
+        osc("triangle", 1040, 1560, 0.01, 0.1, 0.25, 0.18); break;
+      case "spawn":     // unit deployed: soft two-note
+        osc("triangle", 330, 440, 0.008, 0.09, 0.3); osc("sine", 440, 660, 0.008, 0.08, 0.2, 0.07); break;
+      case "win":       // victory: rising triad
+        [523, 659, 784, 1046].forEach((f, i) => { osc("sine", f, f, 0.01, 0.4, 0.35, i * 0.11); osc("triangle", f * 2, f * 2, 0.01, 0.3, 0.12, i * 0.11); });
+        noise(3000, 0.01, 0.5, 0.15, "highpass", 0.4); break;
+      case "click":     // subtle UI tick
+        osc("triangle", 620, 480, 0.002, 0.04, 0.18); break;
+      case "error":     // UI error: short descending buzz
+        osc("square", 200, 120, 0.004, 0.12, 0.3, 0); osc("square", 150, 90, 0.004, 0.12, 0.25, 0.05); break;
+      default: osc("sine", 500, 400, 0.003, 0.05, 0.2);
+    }
+  };
+}
+
+let last = 0;
+function frame(ts) {
+  const dt = Math.min(0.1, (ts - last) / 1000 || 0);
+  last = ts;
+  if (game && !game.winner) {
+    const spd = game.speed || 1;
+    for (let i = 0; i < spd; i++) game.update(dt);
+    if (ai) ai.tick(dt * spd);
+    if (input) input.update(dt);
+  }
+  if (game && game.onUiTick) game.onUiTick(dt);
+  if (renderer && game) renderer.draw(game);
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener("resize", () => renderer && renderer.resize());
+
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+else boot();
+requestAnimationFrame(frame);
+
+
+== RAND.js FULL len 4208 ==
+// WAR OF THE EAST — rand.js
+// Seeded RNG + procedural map generation.
+
+// mulberry32
+export function makeRng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// terrain codes
+export const T = {
+  GRASS: 0, ORE: 1, OIL: 2, ROCK: 3, TREE: 4, ROAD: 5,
+};
+
+export function generateMap({ w, h, seed }) {
+  const rng = makeRng(seed);
+  const tiles = new Uint8Array(w * h);       // terrain
+  const rocks = new Set();                   // solid tile coords "x,y"
+  const trees = new Set();
+  const oreSpots = new Set();
+  const oilSpots = new Set();
+  const key = (x, y) => x + "," + y;
+
+  // value-noise-ish clumps
+  const blobs = [];
+  const nBlobs = 14;
+  for (let i = 0; i < nBlobs; i++) {
+    blobs.push({
+      x: 4 + rng() * (w - 8),
+      y: 4 + rng() * (h - 8),
+      r: 2.5 + rng() * 5.5,
+      kind: ["rock", "tree", "ore", "ore", "oil"][Math.floor(rng() * 5)],
+    });
+  }
+  // force ore + oil near each corner (bases need them adjacent)
+  const corners = [
+    { x: 3, y: 3, tag: "NW" }, { x: w - 4, y: h - 4, tag: "SE" },
+    { x: w - 4, y: 3, tag: "NE" }, { x: 3, y: h - 4, tag: "SW" },
+  ];
+  for (const c of corners) {
+    for (let k = 0; k < 3; k++) {
+      const dx = Math.round((rng() - 0.5) * 6), dy = Math.round((rng() - 0.5) * 6);
+      const x = Math.min(w - 2, Math.max(1, c.x + dx));
+      const y = Math.min(h - 2, Math.max(1, c.y + dy));
+      oreSpots.add(key(x, y));
+    }
+    for (let k = 0; k < 2; k++) {
+      const dx = Math.round((rng() - 0.5) * 6), dy = Math.round((rng() - 0.5) * 6);
+      const x = Math.min(w - 2, Math.max(1, c.x + dx));
+      const y = Math.min(h - 2, Math.max(1, c.y + dy));
+      oilSpots.add(key(x, y));
+    }
+  }
+  // blobs scatter
+  for (const b of blobs) {
+    const n = Math.floor(b.r * b.r * 0.8);
+    for (let i = 0; i < n; i++) {
+      const a = rng() * Math.PI * 2;
+      const rr = Math.sqrt(rng()) * b.r;
+      const x = Math.round(b.x + Math.cos(a) * rr);
+      const y = Math.round(b.y + Math.sin(a) * rr);
+      if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) continue;
+      const k = key(x, y);
+      if (b.kind === "rock") { rocks.add(k); tiles[y * w + x] = T.ROCK; }
+      else if (b.kind === "tree") { trees.add(k); tiles[y * w + x] = T.TREE; }
+      else if (b.kind === "ore") { oreSpots.add(k); tiles[y * w + x] = T.ORE; }
+      else if (b.kind === "oil") { oilSpots.add(k); tiles[y * w + x] = T.OIL; }
+    }
+  }
+  // scatter a few lone rocks/trees
+  for (let i = 0; i < 60; i++) {
+    const x = 1 + Math.floor(rng() * (w - 2));
+    const y = 1 + Math.floor(rng() * (h - 2));
+    const k = key(x, y);
+    if (rocks.has(k) || trees.has(k) || oreSpots.has(k) || oilSpots.has(k)) continue;
+    if (rng() < 0.5) { trees.add(k); tiles[y * w + x] = T.TREE; }
+    else { rocks.add(k); tiles[y * w + x] = T.ROCK; }
+  }
+  // clear base corners (2x2 + margin)
+  for (const c of corners) {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const x = c.x + dx, y = c.y + dy;
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      const k = key(x, y);
+      if (dx === 0 && dy === 0) continue;
+      if (rocks.has(k)) { rocks.delete(k); tiles[y * w + x] = T.GRASS; }
+      if (trees.has(k)) { trees.delete(k); tiles[y * w + x] = T.GRASS; }
+    }
+  }
+
+  return {
+    w, h, tiles, rocks, trees, oreSpots, oilSpots, key,
+    solid(x, y) { return (x < 0 || y < 0 || x >= w || y >= h) || rocks.has(x + "," + y); },
+    buildable(x, y) {
+      if (x < 0 || y < 0 || x >= w || y >= h) return false;
+      const k = x + "," + y;
+      return !rocks.has(k) && !trees.has(k);
+    },
+    hasOre(x, y) { return oreSpots.has(x + "," + y); },
+    hasOil(x, y) { return oilSpots.has(x + "," + y); },
+    clearTile(x, y) {
+      // player demolishing trees/rocks (cheap utility for build flow)
+      const k = x + "," + y;
+      if (rocks.has(k)) { rocks.delete(k); tiles[y * w + x] = T.GRASS; return true; }
+      if (trees.has(k)) { trees.delete(k); tiles[y * w + x] = T.GRASS; return true; }
+      return false;
+    },
+  };
+}

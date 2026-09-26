@@ -1,0 +1,64 @@
+==== js/menu.js  LEN=13851  LINES=363
+==== js/main.js  LEN=7330  LINES=155
+==== js/config.js  LEN=15735  LINES=185
+==== js/rand.js  LEN=4208  LINES=115
+==== js/sprites.js  LEN=14997  LINES=312
+==== js/ui.js  LEN=17498  LINES=370
+==== js/renderer.js  LEN=8586  LINES=204
+==== js/input.js  LEN=10829  LINES=256
+==== css/game.css  LEN=6875  LINES=187
+==== index.html  LEN=473  LINES=18
+MENU has generateTileSheet import? True
+MENU has generateMap import? True
+MENU onStart? True
+MENU onPlay? False
+MENU sfx.beep? True
+MENU TUNE.shake? True
+RAND export function generateMap => True
+RAND export const T => True
+RAND export function tiles => False
+RAND export const TILES => False
+RAND export function buildTiles => False
+RAND export function generateTileSheet => False
+RAND export const => True
+RAND export function => True
+SPR export lines:
+   export const SPRITE_OVERRIDES = {}; // id -> HTMLImageElement (external)
+   export function loadArtOverrides(manifestUrl = "art/sprites/manifest.json") {
+   export const SPRITES = {};
+   export const _unitKey = new Map(); // unit cfg object -> sprite id
+   export const _bId = new Map();     // building cfg object -> building id (sprite key = fac + "_" + id)
+   export function unitSpriteKey(cfg) { return _unitKey.get(cfg) || "u_unknown"; }
+   export function bSpriteKey(fac, cfg) { return fac + "_" + (_bId.get(cfg) || "depot"); }
+   export function buildSprites() {
+   export const TILES = { grass: null, ore: null, oil: null, rock: null, tree: null };
+   export function buildTiles() {
+CFG TUNE.shake? False
+CFG TUNE block:
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRate: 25,               // fuel/s at own refinery / tank factory
+  refuelRadius: 64,             // px — how close a tank must be to refill
+  aiWaveInterval: 45,
+  aiAggroMin: 4,
+  maxUnitsPerSide: 120,
+  zoomMin: 0.5, zoomMax: 2.0,
+  basePower: 80,
+  baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+};
+CFG nameEN count: 0
+CFG MAP_W/MAP_H? True
+CFG MAP_W context: .
+
+export const TILE = 32;
+export const MAP_W = 60;   // tiles
+export const MAP_H = 60;
+export const

@@ -1,0 +1,43 @@
+########## index.html ##########
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>War of the East — 東洋戦争 (1937–1945)</title>
+  <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+  <div id="menu"></div>
+  <div id="game" class="hidden">
+    <canvas id="view"></canvas>
+    <!-- UI panels are injected here by js/ui.js -->
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
+
+########## rand.js tail (terrain+return) ##########
+
+########## renderer MAP_W/MAP_H refs ##########
+import { TILE, MAP_W, MAP_H, FACTION_META, BUILDINGS } from "./config.js";
+    const ww = MAP_W * TILE, wh = MAP_H * TILE;
+    const x1 = Math.min(MAP_W - 1, Math.ceil((c.x + this.cv.clientWidth / z) / TILE) + 1);
+    const y1 = Math.min(MAP_H - 1, Math.ceil((c.y + this.cv.clientHeight / z) / TILE) + 1);
+########## renderer draw() head + tile draw ##########
+===draw(game)===: ['  draw(game) {']
+===drawTile===: ['        this.drawTile(game, tx, ty);', '  drawTile(game, tx, ty) {']
+===tiles[===: ['    const t = game.map.tiles[ty * game.map.w + tx] || 0;']
+===TILES.===: ['    let img = t === T.ORE ? TILES.ore : t === T.OIL ? TILES.oil : t === T.ROCK ? TILES.rock : t === T.TREE ? TILES.tree : TILES.grass;']
+===shake===: []
+===WOE_SHAKE===: []
+===showGrid===: []
+########## engine _sfx / attach / nameEN ##########
+    this.playerName = FACTION_META[this.player].nameEN;
+    this.aiName = FACTION_META[this.aiFac].nameEN;
+          tin: (f === this.aiFac ? START.tin * aiMult : START.tin) * (opts.resMult || 1),
+          steel: (f === this.aiFac ? START.steel * aiMult : START.steel) * (opts.resMult || 1),
+          fuel: (f === this.aiFac ? START.fuel * aiMult : START.fuel) * (opts.resMult || 1),
+    this._sfx = null; this._onWin = null; this.onUiTick = null;
+  attach(o = {}) { this._sfx = o.sfx || null; this._onWin = o.onWin; }
+  sound(n) { if (this._sfx) this._sfx(n); }

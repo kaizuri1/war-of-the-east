@@ -1,0 +1,163 @@
+### input.js L240-end
+240|       else if (k === "s" || k === "arrowdown" || e.code === "ArrowDown") this.edges.b = false;
+241|       else if (k === "a" || k === "arrowleft" || e.code === "ArrowLeft") this.edges.l = false;
+242|       else if (k === "d" || k === "arrowright" || e.code === "ArrowRight") this.edges.r = false;
+243|     }
+244|     void was;
+245|   }
+246|   update(dt) {
+247|     const c = this.r.cam;
+248|     const sp = 320 * dt / c.zoom;
+249|     if (this.edges.l) c.x -= sp;
+250|     if (this.edges.r) c.x += sp;
+251|     if (this.edges.t) c.y -= sp;
+252|     if (this.edges.b) c.y += sp;
+253|     if (this.edges.l || this.edges.r || this.edges.t || this.edges.b) this.clampCam();
+254|   }
+255| }
+### renderer.js L60-end
+len 8586
+60|     for (const u of game.units) if (!u.dead) this.drawUnit(game, u);
+61|     // projectiles on top
+62|     for (const p of game.projectiles) this.drawProjectile(p);
+63|     // rubber-band selection box (screen space)
+64|     if (this.dragSel) {
+65|       g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+66|       g.strokeStyle = "#ffe873"; g.lineWidth = 1;
+67|       g.fillStyle = "rgba(255,232,115,0.12)";
+68|       const s = this.dragSel;
+69|       g.fillRect(s.x, s.y, s.w, s.h);
+70|       g.strokeRect(s.x + 0.5, s.y + 0.5, s.w, s.h);
+71|     }
+72|     this.ox = null;
+73|   }
+74|   drawTile(game, tx, ty) {
+75|     const g = this.g;
+76|     const t = game.map.tiles[ty * game.map.w + tx] || 0;
+77|     let img = t === T.ORE ? TILES.ore : t === T.OIL ? TILES.oil : t === T.ROCK ? TILES.rock : t === T.TREE ? TILES.tree : TILES.grass;
+78|     g.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
+79|   }
+80|   drawBuilding(game, b) {
+81|     const g = this.g;
+82|     const img = SPRITES[bSpriteKey(b.fac, b.cfg)];
+83|     const W = b.w * TILE, H = b.h * TILE;
+84|     const ex = b.tx * TILE, ey = b.ty * TILE;
+85|     if (img) g.drawImage(img, ex, ey, W, H);
+86|     else { g.fillStyle = FACTION_META[b.fac].color; g.fillRect(ex + 2, ey + 2, W - 4, H - 4); }
+87|     // under-construction overlay + progress
+88|     if (b.underConstruction()) {
+89|       g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(ex, ey, W, H);
+90|       const pct = Math.min(1, b.buildT / (b.built || 1));
+91|       g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
+92|       g.fillStyle = "#e8c840"; g.fillRect(ex + 1, ey - 6, (W - 2) * pct, 3);
+93|     }
+94|     // underpowered flash
+95|     if (b.underpowered && Math.floor(game.time * 2) % 2 === 0) {
+96|       g.fillStyle = "rgba(255,80,40,0.25)"; g.fillRect(ex, ey, W, H);
+97|     }
+98|     // production bar
+99|     if (b.queue.length) {
+100|       const cur = b.queue[0];
+101|       const pct = Math.min(1, b.queueTimer / ((cur._cfg && cur._cfg.time) || 1));
+102|       g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
+103|       g.fillStyle = "#8fd463"; g.fillRect(ex + 1, ey - 6, (W - 2) * pct, 3);
+104|     }
+105|     // capture bar
+106|     if (b.capByFac && b.capByFac !== b.fac && b.capHp < b.maxHp) {
+107|       const cp = Math.min(1, (b.maxHp - b.capHp) / Math.max(1, b.maxHp));
+108|       g.fillStyle = "#222"; g.fillRect(ex, ey - 13, W, 5);
+109|       g.fillStyle = FACTION_META[b.capByFac].accent; g.fillRect(ex + 1, ey - 12, (W - 2) * cp, 3);
+110|     }
+111|     // hp bar when damaged
+112|     if (b.hp < b.maxHp) {
+113|       g.fillStyle = "#111"; g.fillRect(ex + 3, ey + H - 5, W - 6, 3);
+114|       g.fillStyle = hpCol(b.hp / b.maxHp); g.fillRect(ex + 3, ey + H - 5, (W - 6) * (b.hp / b.maxHp), 3);
+115|     }
+116|   }
+117|   drawUnit(game, u) {
+118|     const g = this.g;
+119|     const img = SPRITES[unitSpriteKey(u.cfg)];
+120|     const fp = u.footprint() * 2;
+121|     if (img) {
+122|       // face movement direction
+123|       g.save();
+124|       g.translate(u.x, u.y);
+125|       const ang = u.moving || u.target ? Math.atan2((u.target ? u.target.y : (u.path && u.path[0] ? u.path[0].y : u.y)) - u.y, (u.target ? u.target.x : (u.path && u.path[0] ? u.path[0].x : u.x + 1)) - u.x) : (u._dir || 0);
+126|       if (u.isAir()) ang += Math.PI;
+127|       g.rotate(ang);
+128|       g.drawImage(img, -fp / 2 - 2, -fp / 2 - 2, fp + 4, fp + 4);
+129|       g.restore();
+130|     }
+131|     if (u.spawnTimer > 0) { g.globalAlpha = 0.5 + 0.5 * Math.sin(game.time * 20); }
+132|     // hp bar
+133|     if (u.hp < u.maxHp || u.selected) {
+134|       g.fillStyle = "#111"; g.fillRect(u.x - 10, u.y - fp / 2 - 6, 20, 3);
+135|       g.fillStyle = hpCol(u.hp / u.maxHp); g.fillRect(u.x - 10, u.y - fp / 2 - 6, 20 * (u.hp / u.maxHp), 3);
+136|     }
+137|     // fuel bar
+138|     if (u.maxT > 0 && u.t < u.maxT - 1) {
+139|       g.fillStyle = "#333"; g.fillRect(u.x - 10, u.y + fp / 2 + 2, 20, 2);
+140|       g.fillStyle = "#e8c840"; g.fillRect(u.x - 10, u.y + fp / 2 + 2, 20 * (u.t / u.maxT), 2);
+141|     }
+142|     g.globalAlpha = 1;
+143|   }
+144|   drawProjectile(p) {
+145|     const g = this.g;
+146|     const t = Math.hypot(p.tx - p.x, p.ty - p.y) || 1;
+147|     g.strokeStyle = p.cls === "air" ? "#9fd8ff" : p.cls === "def" ? "#ffd9a0" : "#ffe9a8";
+148|     g.lineWidth = p.cls === "tank" ? 2.4 : 1.6;
+149|     g.beginPath();
+150|     g.moveTo(p.x - (p.tx - p.x) / t * 6, p.y - (p.ty - p.y) / t * 6);
+151|     g.lineTo(p.x, p.y);
+152|     g.stroke();
+153|     g.fillStyle = "#fff2c0";
+154|     g.beginPath(); g.arc(p.x, p.y, 1.6, 0, 6.29); g.fill();
+155|   }
+156|   ring(e, col) {
+157|     const g = this.g;
+158|     g.strokeStyle = col; g.lineWidth = 1.4;
+159|     g.beginPath(); g.arc(e.x, e.y, e.footprint() + 3 + Math.sin(e.anim) * 0.001, 0, 6.29); g.stroke();
+160|   }
+161|   bRing(b, col) {
+162|     const g = this.g;
+163|     g.strokeStyle = col; g.lineWidth = 2;
+164|     g.strokeRect(b.tx * TILE + 1, b.ty * TILE + 1, b.w * TILE - 2, b.h * TILE - 2);
+165|   }
+166|   drawGhost(game) {
+167|     const gh = this.buildGhost;
+168|     if (!gh) return;
+169|     const cfg = BUILDINGS[gh.id];
+170|     if (!cfg) return;
+171|     const g = this.g;
+172|     const W = (cfg.w || 1) * TILE, H = (cfg.h || 1) * TILE;
+173|     const ex = gh.tx * TILE, ey = gh.ty * TILE;
+174|     // real sprite ghost
+175|     const img = SPRITES[bSpriteKey(game.player, cfg)];
+176|     g.globalAlpha = 0.55;
+177|     if (img) g.drawImage(img, ex, ey, W, H);
+178|     else { g.fillStyle = gh.ok ? "#7fd45f" : "#d45f5f"; g.fillRect(ex, ey, W, H); }
+179|     // tint overlay so validity reads at a glance
+180|     g.globalAlpha = 0.30;
+181|     g.fillStyle = gh.ok ? "#7fd45f" : "#d45f5f";
+182|     g.fillRect(ex, ey, W, H);
+183|     g.globalAlpha = 1;
+184|     g.strokeStyle = gh.ok ? "#bff5a0" : "#f5b0b0";
+185|     g.lineWidth = 1.5;
+186|     g.strokeRect(ex + 0.5, ey + 0.5, W - 1, H - 1);
+187|     // cost + name label above the ghost
+188|     const cost = cfg.cost;
+189|     const label = `${cfg.name}${cost ? "  " + Object.entries(cost).filter(([, v]) => v > 0).map(([k, v]) =>
+190|       v + (k === "tin" ? "◆" : k === "steel" ? "✚" : "⛽")).join(" ") : ""}`;
+191|     g.font = "11px monospace";
+192|     const tw = g.measureText(label).width;
+193|     const lx = Math.max(0, Math.min(this.cv.clientWidth / this.cam.zoom - 8, ex + W / 2));
+194|     const ly = Math.max(12, ey - 8);
+195|     g.fillStyle = "rgba(0,0,0,0.65)";
+196|     g.fillRect(lx - tw / 2 - 4, ly - 13, tw + 8, 15);
+197|     g.fillStyle = gh.ok ? "#d8f0c0" : "#f0d0d0";
+198|     g.textAlign = "center";
+199|     g.fillText(label, lx, ly - 1);
+200|     g.textAlign = "left";
+201|   }
+202| }
+203| function hpCol(p) { return p > 0.5 ? "#7fd45f" : p > 0.25 ? "#e8c840" : "#d45f5f"; }

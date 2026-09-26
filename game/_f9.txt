@@ -1,0 +1,183 @@
+### engine.js L1-56
+1| // WAR OF THE EAST — engine.js
+2| // Game object: state, fixed-dt tick, economy (tin/steel/fuel), power,
+3| // production, research, projectiles, counters, win/lose.
+4| // main.js drives it; input.js / ui.js / ai.js hook in.
+5| import { UNITS, BUILDINGS, UPGRADES, TUNE, TILE, FACTION_META, START, producible, AI_DIFF } from "./config.js";
+6| import * as E from "./entities.js";
+7| import { nearestEnemy as nE } from "./entities.js";
+8| 
+9| class Projectile {
+10|   constructor(x, y, target, fac, dmg, splash, cls) {
+11|     this.x = x; this.y = y;
+12|     this.target = target;
+13|     this.tx = target.x; this.ty = target.y;
+14|     this.fac = fac; this.dmg = dmg;
+15|     this.splash = splash; this.cls = cls; // infantry|tank|gun|air|def
+16|     this.alt = Math.random() * 10 + 8;    // visual arc
+17|     this.speed = 380;
+18|     this.dead = false;
+19|     this.life = 2.0;
+20|   }
+21| }
+22| 
+23| export class Game {
+24|   constructor(map, opts = {}) {
+25|     this.map = map;
+26|     this.time = 0;
+27|     this.units = [];
+28|     this.buildings = [];
+29|     this.projectiles = [];
+30|     this.events = [];
+31|     this.occupied = new Set();      // "x,y" tiles blocked (units + buildings)
+32|     this.player = opts.player || "china";
+33|     this.aiFac = this.player === "china" ? "japan" : "china";
+34|     this.winner = null;
+35|     this.paused = false;
+36|     this.speed = 1;                 // 1/2/3 game speed
+37|     this.playerName = FACTION_META[this.player].nameEN;
+38|     this.aiName = FACTION_META[this.aiFac].nameEN;
+39|     this.diff = (opts.diff && AI_DIFF[opts.diff]) || null;
+40|     this.fac = {};
+41|     const aiMult = this.diff ? this.diff.resourceMult : 1.0;
+42|     for (const f of ["china", "japan"]) {
+43|       this.fac[f] = {
+44|         res: {
+45|           tin: (f === this.aiFac ? START.tin * aiMult : START.tin) * (opts.resMult || 1),
+46|           steel: (f === this.aiFac ? START.steel * aiMult : START.steel) * (opts.resMult || 1),
+47|           fuel: (f === this.aiFac ? START.fuel * aiMult : START.fuel) * (opts.resMult || 1),
+48|         },
+49|         incomeMult: f === this.aiFac && this.diff ? this.diff.incomeMult : 1.0,
+50|         power: { gen: TUNE.basePower, draw: 0, ok: true },
+51|         upgrades: new Set(),
+52|         needsLock205: f === "japan",  // Type 205 needs Super-Heavy Program
+53|       };
+54|     }
+55|     this._sfx = null; this._onWin = null; this.onUiTick = null;
+56|   }
+### config.js L1-60
+1| // WAR OF THE EAST — config.js
+2| // SINGLE SOURCE OF TRUTH: all unit, building, economy and tuning stats.
+3| // Edit here (and mirror in plan/workbook) before touching code.
+4| 
+5| export const TILE = 32;
+6| export const MAP_W = 60;   // tiles
+7| export const MAP_H = 60;
+8| export const WORLD_W = MAP_W * TILE;
+9| export const WORLD_H = MAP_H * TILE;
+10| 
+11| export const RES = {
+12|   TIN: "tin", STEEL: "steel", FUEL: "fuel"
+13| };
+14| 
+15| export const START = {
+16|   tin: 2200, steel: 250, fuel: 250,
+17|   seed: 20260924
+18| };
+19| 
+20| // Resource spawn tiers — SKIRMISH "starting funds", applied to BOTH factions.
+21| export const RES_TIERS = {
+22|   low:    { label: "LOW",    tin: 1100, steel: 125, fuel: 125 },
+23|   medium: { label: "MEDIUM", tin: 2200, steel: 250, fuel: 250 },
+24|   high:   { label: "HIGH",   tin: 3600, steel: 400, fuel: 400 },
+25|   max:    { label: "MAX",    tin: 5000, steel: 600, fuel: 600 },
+26| };
+27| 
+28| // AI difficulty (applied to every AI-faction in the match).
+29| export const AI_DIFF = {
+30|   easy:   { label: "EASY",   waveGap: 150, nextWave: 110, strength: 1.5,  resourceMult: 0.8,  incomeMult: 0.85, preResearch: [] },
+31|   medium: { label: "MEDIUM", waveGap: 90,  nextWave: 60,  strength: 1.0,  resourceMult: 1.0,  incomeMult: 1.0,  preResearch: [] },
+32|   hard:   { label: "HARD",   waveGap: 55,  nextWave: 40,  strength: 0.75, resourceMult: 1.6,  incomeMult: 1.25, preResearch: ["up1a", "up2a"] },
+33| };
+34| 
+35| // Skirmish maps (seeded + reproducible).
+36| export const MAPS = [
+37|   { id: "m1937", name: "Marco Polo Bridge '37", w: 45, h: 45, seed: 20260924 },
+38|   { id: "m1938", name: "Shandong Front '38",    w: 60, h: 60, seed: 19381115 },
+39|   { id: "m1940", name: "Yangtze Delta '40",      w: 80, h: 60, seed: 19400720 },
+40|   { id: "m1944", name: "Burma Road '44",         w: 70, h: 40, seed: 19440201 },
+41| ];
+42| 
+43| export const FACS = ["china", "japan"];
+44| 
+45| export const TUNE = {
+46|   underpowerMult: 0.5,          // production speed when short on power
+47|   sellRefund: 0.5,
+48|   captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+49|   captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+50|   repairRate: 15,               // hp/s per engineer on a friendly unit
+51|   maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+52|   fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+53|   fuelFullSpeedMult: 1.0,
+54|   fuelEmptySpeedMult: 0.4,
+55|   refuelRate: 25,               // fuel/s at own refinery / tank factory
+56|   refuelRadius: 64,             // px — how close a tank must be to refill
+57|   aiWaveInterval: 45,
+58|   aiAggroMin: 4,
+59|   maxUnitsPerSide: 120,
+60|   zoomMin: 0.5, zoomMax: 2.0,
+### main.js L1-40
+1| // War of the East — bootstrap: menu first, then wires config → map → engine →
+2| // renderer → input → UI → AI, and runs a clamped requestAnimationFrame loop.
+3| import { TILE, MAP_W, MAP_H, RES_TIERS } from "./config.js";
+4| import { generateMap } from "./rand.js";
+5| import { Game } from "./engine.js";
+6| import { Renderer } from "./renderer.js";
+7| import { Input } from "./input.js";
+8| import { UI } from "./ui.js";
+9| import { AI } from "./ai.js";
+10| import { buildTiles, buildSprites, loadArtOverrides } from "./sprites.js";
+11| import { bootMenu } from "./menu.js";
+12| 
+13| let game, renderer, input, ui, ai, canvas, sfx;
+14| 
+15| async function boot() {
+16|   await loadArtOverrides(); // drop-in PNG art if present; silent no-op otherwise
+17|   buildTiles();
+18|   buildSprites();
+19|   canvas = document.getElementById("view");
+20|   renderer = new Renderer(canvas);
+21|   renderer.resize();
+22|   sfx = makeSfx();
+23|   sfx.applySettings = applySettings;   // hooks up menu SETTINGS sliders
+24|   bootMenu({ onPlay: playGame });
+25| }
+26| 
+27| function applySettings(s) {
+28|   // s = { sfxVol, musicVol, musicMuted, shake } — applied live.
+29|   if (s && !sfx) return;
+30|   if (sfx._setVol) sfx._setVol(s.sfxVol);
+31|   if (s.fx.shake !== undefined) window.WOE_SHAKE = s.fx.shake !== "off";
+32| }
+33| 
+34| // Build a full match from the skirmish setup chosen in the menu, then hand
+35| // control to the game loop. The menu DOM is cleared by the UI constructor.
+36| function playGame(cfg) {
+37|   const map = generateMap({ w: cfg.w, h: cfg.h, seed: cfg.seed });
+38|   game = new Game(map, { player: cfg.player, diff: cfg.diff, res: cfg.res });
+39|   game.setupBases();
+40| 
+### ui drawMinimap block
+drawMinimap();
+    // keep card affordability / tier-unlocks / research state live (1s cadence)
+    g._gridAcc = (g._gridAcc || 0) + 0.15;
+    if (g._gridAcc >= 1) { g._gridAcc = 0; this.refresh(); }
+  }
+  refreshSel() {
+    const g = this.g;
+    const su = g.units.filter((u) => u.selected && !u.dead && u.isAlive());
+    const sb = g.buildings.filter((b) => b.selected && !b.dead && b.isAlive());
+    const el = this.root.querySelector("#sel");
+    let h = "";
+    if (su.length) {
+      const c = su[0].cfg;
+      const hp = Math.round(su.reduce((a, u) => a + u.hp, 0) / su.length);
+      h = `<div class="selhead"><span>${c.name}${su.length > 1 ? " ×" + su.length : ""}</span><span class="tag">${c.class}</span></div>
+          <div class="selrow">avg hp ${hp}/${c.hp}</div>
+          <div class="selrow dim">dmg ${c.dmg} · range ${Math.round(c.range)} · sp ${c.speed}</div>
+          <div class="selhint">RMB move · RMB+enemy attack · CTR+1..5 group</div>`;
+    } else if (sb.length) {
+      const b = sb[0], q = b.queue || [];
+      h = `<div class="selhead"><span>${b.cfg.name}</span><span class="tag">${b.cfg.produces || "building"}</span></div>
+          <div class="selrow">hp ${Math.round(b.hp)}/${b.maxHp}${b.underConstruction() ? " · under construction" : ""}${b.underpowered ? " · ⚠ NO POWER" : ""}</div>
+          ${b.cfg.slots ? `<div class="selrow">queue ${q.length}/${b.cfg.slots}${

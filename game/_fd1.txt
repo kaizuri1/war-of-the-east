@@ -1,0 +1,363 @@
+##### MENU.JS FULL #####
+1| // WAR OF THE EAST — menu.js
+2| // Title screen (MAIN MENU: SKIRMISH / MISSION(greyed) / SETTINGS) + skirmish setup.
+3| // The game does NOT auto-start: bootMenu() shows the title and waits for the
+4| // player to press START BATTLE. MISSION stays disabled until campaign data ships.
+5| // Ground truth: config.js (MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE).
+6| import { MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE } from "./config.js";
+7| import { generateMap } from "./rand.js";
+8| import { generateTileSheet } from "./sprites.js";
+9| 
+10| const STORE = "woe-settings";
+11| 
+12| // Live settings — read by main.js / ui.js; persisted to localStorage.
+13| export const MENU = {
+14|   S: {
+15|     musicMuted: false,
+16|     sfxVol: 1,
+17|     musicVol: 1,
+18|     shake: TUNE.shake,
+19|     showGrid: false,
+20|     camX: null, camY: null,
+21|   },
+22| };
+23| 
+24| let sfx = null;                 // set via setSfx() after the sound system is built
+25| let handlers = null;            // { onStart(sel), onQuit() }
+26| let started = false;            // true once the player chose START BATTLE
+27| const beep = (f0, f1, d, type = "square", vol = 0.025) => sfx && sfx.beep(f0, f1, d, type, vol);
+28| 
+29| function loadSettings() {
+30|   try {
+31|     const j = JSON.parse(localStorage.getItem(STORE) || "{}");
+32|     Object.assign(MENU.S, j);
+33|     if (typeof MENU.S.camX !== "number") MENU.S.camX = null;
+34|   } catch { /* first run */ }
+35| }
+36| function saveSettings() {
+37|   try { localStorage.setItem(STORE, JSON.stringify(MENU.S)); } catch { /* private mode */ }
+38| }
+39| 
+40| function segRow(container, values, selected, cb) {
+41|   const r = document.createElement("div");
+42|   r.className = "menu-seg";
+43|   for (const v of values) {
+44|     const b = document.createElement("button");
+45|     b.textContent = v.label;
+46|     b.dataset.v = v.id;
+47|     if (v.id === selected) b.classList.add("on");
+48|     b.addEventListener("click", () => {
+49|       for (const x of r.children) x.classList.remove("on");
+50|       b.classList.add("on");
+51|       beep(360, 460, 0.03, "sine", 0.02);
+52|       cb(v.id);
+53|       syncSummary();
+54|     });
+55|     r.appendChild(b);
+56|   }
+57|   container.appendChild(r);
+58|   return r;
+59| }
+60| 
+61| function mapThumb(cv, mapDef) {
+62|   // Miniature preview rendered from the same seeded map — cheap (tiny tiles).
+63|   const m = generateMap({ w: mapDef.w, h: mapDef.h, seed: mapDef.seed, scatter: 0.18, edges: 5 });
+64|   const TW = Math.max(1, Math.round(mapDef.w / 45)), TH = Math.max(1, Math.round(mapDef.h / 45));
+65|   const s = generateTileSheet(m.tiles, TW, TH);
+66|   const ctx = cv.getContext("2d");
+67|   ctx.imageSmoothingEnabled = false;
+68|   ctx.clearRect(0, 0, cv.width, cv.height);
+69|   ctx.drawImage(s, m.sx, m.sy, (TW * 2 + 2), (TH * 2 + 2), 0, 0, cv.width, cv.height);
+70| }
+71| 
+72| function toggleRow(parent, label, get, set) {
+73|   const row = document.createElement("div");
+74|   row.className = "menu-row";
+75|   const lab = document.createElement("span");
+76|   lab.textContent = label;
+77|   row.appendChild(lab);
+78|   const y = document.createElement("div");
+79|   y.className = "menu-y menu-seg";
+80|   for (const val of [true, false]) {
+81|     const b = document.createElement("button");
+82|     b.textContent = val ? "ON" : "OFF";
+83|     if (get() === val) b.classList.add("on");
+84|     b.addEventListener("click", () => {
+85|       for (const x of y.children) x.classList.remove("on");
+86|       b.classList.add("on");
+87|       set(val);
+88|       beep(360, 440, 0.03, "sine", 0.02);
+89|     });
+90|     y.appendChild(b);
+91|   }
+92|   row.appendChild(y);
+93|   parent.appendChild(row);
+94| }
+95| 
+96| const summary = () => document.querySelector("#sk-summary");
+97| function syncSummary() {
+98|   const el = summary();
+99|   if (!el) return;
+100|   const f = document.querySelector("#sk-fac .on")?.dataset.v || "china";
+101|   const ai = document.querySelector("#sk-ai .on")?.dataset.v || "japan";
+102|   const r = document.querySelector("#sk-res .on")?.dataset.v || "medium";
+103|   const d = document.querySelector("#sk-diff .on")?.dataset.v || "medium";
+104|   const map = document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id;
+105|   const m = MAPS.find((x) => x.id === map) || MAPS[0];
+106|   el.textContent =
+107|     `${FACTION_META[f].nameEN} vs ${FACTION_META[ai].nameEN} — ${m.name} — ` +
+108|     `funds ${r.toUpperCase()} — AI ${AI_DIFF[d].label}`;
+109| }
+110| 
+111| function markAiWarning() {
+112|   const mine = document.querySelector("#sk-fac .on")?.dataset.v;
+113|   document.querySelector("#sk-ai .on")?.classList.toggle("warn", mine && mine === document.querySelector("#sk-ai .on").dataset.v);
+114| }
+115| 
+116| // ================================================================
+117| export function bootMenu(h) {
+118|   handlers = h;
+119|   loadSettings();
+120|   TUNE.shake = MENU.S.shake;          // apply saved preferences
+121|   sfx && applySfx();
+122| 
+123|   if (!document.querySelector("#menu h1")) {
+124|     const root = document.querySelector("#menu");
+125|     root.innerHTML = `
+126|       <div class="menu-screen" id="ms-title">
+127|         <div class="title-top">
+128|           <div id="title-deco"></div>
+129|           <h1 class="title-main">WAR OF THE EAST</h1>
+130|           <div class="title-sub">東洋戦争 · 1937–1945</div>
+131|           <div class="title-tag">A Command &amp; Conquer-style browser RTS</div>
+132|         </div>
+133|         <div id="title-menu">
+134|           <button class="menu-item on" id="mi-skmish">SKIRMISH</button>
+135|           <button class="menu-item" id="mi-mission" title="Mission mode arrives with a campaign data pack — greyed out for now.">
+136|             MISSION <span class="soon">SOON</span></button>
+137|           <button class="menu-item" id="mi-settings">SETTINGS</button>
+138|         </div>
+139|         <div class="title-foot">v1.0 · skirmish · in-game: F1–F3 speed · Esc menu · Enter restart</div>
+140|       </div>
+141|       <div class="menu-screen" id="ms-skirmish" hidden></div>
+142|       <div class="menu-screen" id="ms-settings" hidden></div>`;
+143|     document.querySelector("#mi-skmish").addEventListener("click", () => { beep(340, 520, 0.04, "triangle"); show(1); });
+144|     document.querySelector("#mi-settings").addEventListener("click", () => { beep(340, 520, 0.04, "triangle"); show(2); });
+145|   }
+146|   window.addEventListener("keydown", onMenuKey);
+147| }
+148| 
+149| function show(i) {
+150|   const scr = (id) => document.getElementById(id);
+151|   scr("ms-title").hidden = i !== 0;
+152|   if (i === 1) buildSkirmish();
+153|   if (i === 2) buildSettings();
+154|   scr("ms-skirmish").hidden = i !== 1;
+155|   scr("ms-settings").hidden = i !== 2;
+156|   if (i === 1) { syncSummary(); markAiWarning(); }
+157|   if (i === 2) refreshCamLabel();
+158|   window.scrollTo(0, 0);
+159| }
+160| 
+161| function onMenuKey(e) {
+162|   if (started) return;
+163|   if (e.key === "Escape" &&
+164|       (!document.getElementById("ms-skirmish").hidden || !document.getElementById("ms-settings").hidden)) {
+165|     beep(500, 320, 0.05, "triangle");
+166|     show(0);
+167|   }
+168| }
+169| 
+170| // ================================================================
+171| function buildSkirmish() {
+172|   const el = document.getElementById("ms-skirmish");
+173|   if (el.dataset.built) return;
+174|   el.dataset.built = "1";
+175|   el.innerHTML = `
+176|     <div class="menu-head">
+177|       <button class="menu-back" id="sk-back">&larr; MAIN MENU</button>
+178|       <h2>SKIRMISH</h2>
+179|       <div class="menu-spacer"></div>
+180|     </div>
+181|     <div class="menu-grid">
+182|       <div class="menu-box">
+183|         <h3>BATTLEFIELD</h3>
+184|         <div class="menu-hint">seeded — the same map always looks the same</div>
+185|         <div id="sk-maps" class="menu-maplist"></div>
+186|       </div>
+187|       <div class="menu-box">
+188|         <h3>YOUR FACTION</h3>
+189|         <div id="sk-fac" class="menu-facs"></div>
+190|         <h3 class="mt2">ENEMY AI FACTION</h3>
+191|         <div class="menu-hint">one computer opponent controls this faction</div>
+192|         <div id="sk-ai" class="menu-facs"></div>
+193|       </div>
+194|       <div class="menu-box">
+195|         <h3>STARTING FUNDS</h3>
+196|         <div id="sk-res"></div>
+197|         <div id="sk-resinfo" class="menu-info"></div>
+198|         <h3 class="mt2">AI DIFFICULTY</h3>
+199|         <div id="sk-diff"></div>
+200|         <div id="sk-diffinfo" class="menu-info"></div>
+201|       </div>
+202|     </div>
+203|     <div id="sk-summary" class="menu-summary"></div>
+204|     <div class="menu-foot">
+205|       <button class="menu-start" id="sk-start">&#9654; START BATTLE</button>
+206|     </div>`;
+207| 
+208|   // --- map picker ---
+209|   const mapsEl = document.getElementById("sk-maps");
+210|   MAPS.forEach((m, i) => {
+211|     const c = document.createElement("div");
+212|     c.className = "menu-map" + (i === 0 ? " on" : "");
+213|     c.dataset.v = m.id;
+214|     const cv = document.createElement("canvas");
+215|     cv.width = 120; cv.height = 90;
+216|     c.appendChild(cv);
+217|     const d = document.createElement("div");
+218|     d.className = "menu-mapd";
+219|     d.innerHTML = `<b>${m.name}</b><span>${m.w}×${m.h} · seed ${m.seed}</span>`;
+220|     c.appendChild(d);
+221|     c.addEventListener("click", () => {
+222|       beep(430, 430, 0.03, "sine", 0.02);
+223|       for (const x of mapsEl.children) x.classList.remove("on");
+224|       c.classList.add("on");
+225|       syncSummary();
+226|     });
+227|     mapsEl.appendChild(c);
+228|     mapThumb(cv, m);
+229|   });
+230| 
+231|   // --- faction pickers ---
+232|   const facValues = Object.keys(FACTION_META).map((k) => ({ id: k, label: FACTION_META[k].nameEN }));
+233|   segRow(document.getElementById("sk-fac"), facValues, "china", markAiWarning);
+234|   segRow(document.getElementById("sk-ai"), facValues, "japan", null);
+235|   // make the (now-stale) ai click handler also re-warn — segRow bound cb=null;
+236|   for (const b of document.getElementById("sk-ai").children) {
+237|     b.addEventListener("click", markAiWarning);
+238|   }
+239| 
+240|   // --- resource tiers ---
+241|   const resInfo = {
+242|     low: "Lean start — expand fast or die trying.",
+243|     medium: "The intended opening balance.",
+244|     high: "Comfortable economy — production early.",
+245|     max: "Maxed treasury — full war economy immediately.",
+246|   };
+247|   segRow(document.getElementById("sk-res"),
+248|     Object.keys(RES_TIERS).map((k) => ({ id: k, label: k[0].toUpperCase() + k.slice(1) })),
+249|     "medium", (id) => {
+250|       const t = RES_TIERS[id];
+251|       document.getElementById("sk-resinfo").textContent =
+252|         `tin ${t.tin.toLocaleString()} · steel ${t.steel.toLocaleString()} · fuel ${t.fuel.toLocaleString()} — ${resInfo[id]}`;
+253|     });
+254|   document.getElementById("sk-res .on")?.dispatchEvent(new Event("click"));
+255| 
+256|   // --- difficulty ---
+257|   const diffInfo = {
+258|     easy: "Slow waves, cheaper economy — a gentle introduction.",
+259|     medium: "Balanced pace — the intended experience.",
+260|     hard: "Fast, well-funded waves; the AI rushes heavy units.",
+261|   };
+262|   segRow(document.getElementById("sk-diff"),
+263|     ["easy", "medium", "hard"].map((k) => ({ id: k, label: k.toUpperCase() })),
+264|     "medium", (id) => {
+265|       const d = AI_DIFF[id];
+266|       document.getElementById("sk-diffinfo").textContent =
+267|         `waves every ${d.waveGap}s · AI funds ×${d.resourceMult} · AI economy ×${d.incomeMult} — ${diffInfo[id]}`;
+268|     });
+269|   document.getElementById("sk-diff .on")?.dispatchEvent(new Event("click"));
+270| 
+271|   document.getElementById("sk-back").addEventListener("click", () => {
+272|     beep(500, 320, 0.05, "triangle");
+273|     show(0);
+274|   });
+275|   document.getElementById("sk-start").addEventListener("click", () => {
+276|     const sel = {
+277|       player: document.querySelector("#sk-fac .on")?.dataset.v || "china",
+278|       aiFac: document.querySelector("#sk-ai .on")?.dataset.v || "japan",
+279|       res: document.querySelector("#sk-res .on")?.dataset.v || "medium",
+280|       diff: document.querySelector("#sk-diff .on")?.dataset.v || "medium",
+281|       map: MAPS.find((m) => m.id === (document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id)) || MAPS[0],
+282|     };
+283|     started = true;
+284|     beep(620, 920, 0.12, "triangle", 0.03);
+285|     handlers.onStart(sel);
+286|   });
+287| }
+288| 
+289| // ================================================================
+290| function buildSettings() {
+291|   const el = document.getElementById("ms-settings");
+292|   if (el.dataset.built) { refreshCamLabel(); return; }
+293|   el.dataset.built = "1";
+294|   el.innerHTML = `
+295|     <div class="menu-head">
+296|       <button class="menu-back" id="st-back">&larr; MAIN MENU</button>
+297|       <h2>SETTINGS</h2>
+298|       <div class="menu-spacer"></div>
+299|     </div>
+300|     <div class="menu-grid">
+301|       <div class="menu-box">
+302|         <h3>AUDIO</h3>
+303|         <div id="st-audio"></div>
+304|       </div>
+305|       <div class="menu-box">
+306|         <h3>GAMEPLAY</h3>
+307|         <div id="st-game"></div>
+308|       </div>
+309|       <div class="menu-box">
+310|         <h3>LAST CAMERA</h3>
+311|         <p id="st-cam" class="menu-info">not yet saved</p>
+312|         <div class="menu-hint">the view position is saved when a game ends</div>
+313|       </div>
+314|     </div>
+315|     <div class="menu-foot"><button class="menu-start" id="st-close">DONE</button></div>`;
+316| 
+317|   toggleRow(document.getElementById("st-audio"), "Music", () => !MENU.S.musicMuted, (v) => {
+318|     MENU.S.musicMuted = !v; sfx && (sfx.musicMuted = MENU.S.musicMuted); saveSettings();
+319|   });
+320|   toggleRow(document.getElementById("st-audio"), "SFX volume", () => MENU.S.sfxVol > 0, (v) => {
+321|     MENU.S.sfxVol = v ? 1 : 0.25; applySfx(); saveSettings();
+322|   });
+323| 
+324|   toggleRow(document.getElementById("st-game"), "Screen shake", () => MENU.S.shake, (v) => {
+325|     MENU.S.shake = v; TUNE.shake = v; saveSettings();
+326|   });
+327|   toggleRow(document.getElementById("st-game"), "Show grid (debug)", () => MENU.S.showGrid, (v) => {
+328|     MENU.S.showGrid = v; saveSettings();
+329|   });
+330| 
+331|   document.getElementById("st-back").addEventListener("click", () => { beep(500, 320, 0.05, "triangle"); show(0); });
+332|   document.getElementById("st-close").addEventListener("click", () => { beep(500, 322, 0.05, "triangle"); show(0); });
+333|   refreshCamLabel();
+334| }
+335| 
+336| function refreshCamLabel() {
+337|   const el = document.getElementById("st-cam");
+338|   if (!el) return;
+339|   el.textContent = MENU.S.camX != null
+340|     ? `saved at tile (${Math.floor(MENU.S.camX / 32)}, ${Math.floor((MENU.S.camY || 0) / 32)})`
+341|     : "not yet saved";
+342| }
+343| 
+344| // main.js calls this once the sound system exists (or after settings edits)
+345| export function setSfx(ref) {
+346|   sfx = ref;
+347|   applySfx();
+348| }
+349| function applySfx() {
+350|   if (!sfx) return;
+351|   if (sfx.applySettings) sfx.applySettings(MENU.S);
+352| }
+353| 
+354| // main.js saves the camera when the game ends so SETTINGS can report it
+355| export function saveCam(x, y) {
+356|   MENU.S.camX = x;
+357|   MENU.S.camY = y;
+358|   saveSettings();
+359|   refreshCamLabel();
+360| }
+361| 
+362| export function isStarted() { return started; }

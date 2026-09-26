@@ -1,0 +1,212 @@
+### config.js L60-110 (FACS/FACTION_META)
+60|   zoomMin: 0.5, zoomMax: 2.0,
+61|   basePower: 80,
+62|   baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+63| };
+64| 
+65| // ---------- shared building templates (mirrored per faction) ----------
+66| // placement: any | ore | oil | any_clear
+67| export const BUILDINGS = {
+68|   depot:    { name: "Construction Depot", jp: "工兵营", zh: "建造厂", cost: { tin: 400 }, time: 0,  hp: 2200, power: -10,
+69|               slots: 3, produces: "building", w: 2, h: 2, desc: "HQ. Win condition — protect it / destroy theirs." },
+70|   power:    { name: "Power Plant",        jp: "発電所", zh: "发电厂", cost: { tin: 300 }, time: 6,  hp: 400,  power: 80,
+71|               slots: 0, produces: null, w: 1, h: 1, desc: "+80 power to the grid." },
+72|   ore:      { name: "Ore Processor",      jp: "鉱石加工所", zh: "矿场", cost: { tin: 350 }, time: 6,  hp: 350,  power: -15,
+73|               slots: 0, produces: null, w: 1, h: 1, income: { tin: 6 }, placement: "ore", desc: "+6 tin/s. Must sit on an ore vein." },
+74|   steel:    { name: "Steel Mill",         jp: "製鉄所", zh: "钢厂", cost: { tin: 500 }, time: 8,  hp: 400,  power: -20,
+75|               slots: 0, produces: null, w: 1, h: 1, steelMill: true, placement: "any_clear", desc: "Consumes 1 tin/s, outputs 1 steel/s." },
+76|   fuel:     { name: "Fuel Depot",         jp: "油槽所", zh: "炼油厂", cost: { tin: 400 }, time: 7,  hp: 350,  power: -15,
+77|               slots: 0, produces: null, w: 1, h: 1, income: { fuel: 2 }, placement: "oil", refuel: true, desc: "+2 fuel/s; tanks refill here. Must sit on an oil field." },
+78|   barracks: { name: "Barracks",           jp: "駐屯地", zh: "兵营", cost: { tin: 450 }, time: 10, hp: 500,  power: -15,
+79|               slots: 2, produces: "infantry", w: 2, h: 1, placement: "any_clear" },
+80|   tankf:    { name: "Tank Factory",       jp: "戦車工場", zh: "战车厂", cost: { tin: 700 }, time: 15, hp: 650,  power: -25,
+81|               slots: 1, produces: "armor", w: 2, h: 2, placement: "any_clear", refuel: true },
+82|   airf:     { name: "Airfield",           jp: "飛行場",  zh: "机场", cost: { tin: 900 }, time: 20, hp: 700,  power: -40,
+83|               slots: 1, produces: "air", w: 3, h: 2, placement: "any_clear" },
+84|   arsenal:  { name: "Arsenal",            jp: "兵器廠",  zh: "军械厂", cost: { tin: 600 }, time: 14, hp: 600,  power: -20,
+85|               slots: 1, produces: "guns", w: 1, h: 2, placement: "any_clear", desc: "Builds placeable AT/AA guns onto empty tiles." },
+86|   lab:      { name: "Upgrades Lab",       jp: "研究施設", zh: "研究所", cost: { tin: 800 }, time: 20, hp: 550,  power: -20,
+87|               slots: 0, produces: null, w: 2, h: 1, placement: "any_clear", desc: "Researches global upgrades." },
+88|   watch:    { name: "Watchtower",         jp: "哨戒塔",  zh: "警备塔", cost: { tin: 150 }, time: 5,  hp: 300,  power: 0,
+89|               slots: 0, produces: null, w: 1, h: 1, placement: "any_clear",
+90|               weapon: { dmg: 8, rof: 1.2, range: 6, target: ["inf", "veh"] } },
+91|   bunker:   { name: "MG Bunker",          jp: "機槍堡",  zh: "机枪堡", cost: { tin: 300 }, time: 8,  hp: 450,  power: 0,
+92|               slots: 0, produces: null, w: 1, h: 1, placement: "any_clear",
+93|               weapon: { dmg: 9, rof: 0.5, range: 6, target: ["inf", "veh"] } },
+94|   concb:    { name: "Concrete Bunker",    jp: "混凝土掩体", zh: "地下掩体", cost: { tin: 600 }, time: 12, hp: 900, power: 0,
+95|               slots: 0, produces: null, w: 2, h: 1, placement: "any_clear",
+96|               weapon: { dmg: 11, rof: 0.8, range: 6.5, target: ["inf", "veh"] } },
+97|   wire:     { name: "Barbed Wire",        jp: "鉄条網",  zh: "铁丝网", cost: { tin: 50 }, time: 3,  hp: 200,  power: 0,
+98|               slots: 0, produces: null, w: 1, h: 1, placement: "any_clear", blocker: true, desc: "Slow, blocks movement." },
+99| };
+100| 
+101| // ---------- China units ----------
+102| const C = "china", J = "japan";
+103| export const UNITS = {
+104|   // ===== CHINA infantry =====
+105|   c_inf:   { fac: C, class: "infantry", name: "Rifleman", jp: "步枪兵", cost: { tin: 90 },  hp: 55,  dmg: 9,   rof: 1.0, range: 5,   speed: 40, targets: ["inf","veh"], w: 0, h: 0 },
+106|   c_heavy: { fac: C, class: "infantry", name: "Heavy MG (M1910)", jp: "重机枪手", cost: { tin: 160 }, hp: 45, dmg: 4,   rof: 0.35, range: 6, speed: 30, targets: ["inf","veh"] },
+107|   c_gren:  { fac: C, class: "infantry", name: "Grenadier", jp: "掷弹兵", cost: { tin: 130 }, hp: 50,  dmg: 16,  rof: 1.4, range: 4,  speed: 40, targets: ["inf","veh"], splash: 1.2 },
+108|   c_mort:  { fac: C, class: "infantry", name: "60mm Mortar Crew", jp: "迫击炮组", cost: { tin: 240, steel: 40 }, hp: 45, dmg: 30, rof: 2.0, range: 7, speed: 28, targets: ["inf","veh"], splash: 2.0 },
+109|   c_eng:   { fac: C, class: "infantry", name: "Engineer", jp: "工兵", cost: { tin: 120 }, hp: 60,  dmg: 5,   rof: 1.6, range: 1,  speed: 45, targets: ["inf"], engineer: true },
+110|   c_elite: { fac: C, class: "infantry", name: "Elite Rifleman (88th Div.)", jp: "精锐步兵", cost: { tin: 180 }, hp: 75, dmg: 13, rof: 0.8, range: 5, speed: 42, targets: ["inf","veh"], needsTier: 1 },
+### main.js L40-155 (TAIL, len=154)
+40| 
+41|   renderer.cam.x = 3 * TILE - canvas.clientWidth / 2 / renderer.cam.zoom;
+42|   renderer.cam.y = 3 * TILE - canvas.clientHeight / 2 / renderer.cam.zoom;
+43| 
+44|   input = new Input(canvas, game, renderer, null);   // ui backfilled below (circular ctor)
+45|   input.clampCam();
+46|   ui = new UI(document.getElementById("game"), game, canvas, input);
+47|   input.ui = ui;
+48|   ui.attachRenderer(renderer);
+49|   game.attach({ sfx, onWin: (w) => ui.showOver(w) });
+50|   ui.attachSfx();
+51|   ui.root.setAttribute("tabindex", "0");
+52|   ui.root.focus();
+53|   game.onUiTick = (dt) => ui.uiTick(dt);
+54|   ai = new AI(game, game.aiFac);
+55| 
+56|   renderer.cam.x = (game.bases?.[cfg.player]?.x ?? 3 * TILE) - canvas.clientWidth / 2 / renderer.cam.zoom;
+57|   renderer.cam.y = (game.bases?.[cfg.player]?.y ?? 3 * TILE) - canvas.clientHeight / 2 / renderer.cam.zoom;
+58|   input.clampCam();
+59| }
+60| 
+61| // Richer WebAudio SFX: layered oscillators + noise bursts + low drum,
+62| // tuned per event. No audio assets.
+63| function makeSfx() {
+64|   let ctx = null, master = null, noiseBuf = null;
+65|   const ensure = () => {
+66|     if (!ctx) {
+67|       try {
+68|         ctx = new (window.AudioContext || window.webkitAudioContext)();
+69|         master = ctx.createGain();
+70|         master.gain.value = 0.9;
+71|         // simple feedback delay for a bit of space
+72|         const dl = ctx.createDelay(0.5); dl.delayTime.value = 0.11;
+73|         const fb = ctx.createGain(); fb.gain.value = 0.18;
+74|         const dlp = ctx.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 2400;
+75|         master.connect(ctx.destination);
+76|         master.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(ctx.destination);
+77|         // pre-baked 1s white noise
+78|         noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+79|         const d = noiseBuf.getChannelData(0);
+80|         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+81|       } catch (e) { return null; }
+82|       if (ctx.state === "suspended") ctx.resume();
+83|     }
+84|     return ctx;
+85|   };
+86|   const env = (g, t, a, d) => { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(1, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); };
+87|   const osc = (type, f0, f1, a, d, vol, t0 = 0) => {
+88|     const c = ensure(); if (!c) return;
+89|     const t = c.currentTime + t0, o = c.createOscillator(), g = c.createGain();
+90|     o.type = type; o.frequency.setValueAtTime(f0, t);
+91|     if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + a + d);
+92|     env(g, t, a, d); g.gain.setValueAtTime(0.0001, t + a + d + 0.0001);
+93|     g.gain.connect(master); o.connect(g); o.start(t); o.stop(t + a + d + 0.05);
+94|   };
+95|   const noise = (f, a, d, vol, type = "bandpass", t0 = 0) => {
+96|     const c = ensure(); if (!c) return;
+97|     const t = c.currentTime + t0, s = c.createBufferSource(); s.buffer = noiseBuf;
+98|     const flt = c.createBiquadFilter(); flt.type = type; flt.frequency.value = f;
+99|     const g = c.createGain(); env(g, t, a, d); g.gain.setValueAtTime(0.001, t);
+100|     g.gain.setValueAtTime(vol, t + a);
+101|     s.connect(flt); flt.connect(g); g.connect(master); s.start(t); s.stop(t + a + d + 0.05);
+102|   };
+103|   return (name) => {
+104|     const t = ensure(); if (!t) return;
+105|     switch (name) {
+106|       case "shot":      // soft muzzle crack: filtered noise + low thump
+107|         noise(1600, 0.002, 0.06, 0.35, "highpass"); osc("sine", 180, 60, 0.002, 0.08, 0.4); break;
+108|       case "impact":    // metal impact: short noise + mid click
+109|         noise(500, 0.002, 0.12, 0.4, "bandpass"); osc("square", 220, 140, 0.002, 0.07, 0.22); break;
+110|       case "build":     // construction: hammer taps (two low thumps) + wood noise
+111|         osc("sine", 90, 55, 0.003, 0.09, 0.5); osc("sine", 90, 55, 0.003, 0.09, 0.5, 0.11);
+112|         noise(300, 0.005, 0.1, 0.2, "bandpass"); break;
+113|       case "demolish":  // explosion: low boom + long noise tail + sub rumble
+114|         noise(900, 0.003, 0.35, 0.6, "lowpass"); osc("sine", 70, 30, 0.004, 0.3, 0.7);
+115|         osc("sawtooth", 55, 25, 0.005, 0.22, 0.3); noise(400, 0.01, 0.25, 0.35, "bandpass", 0.03); break;
+116|       case "die":       // unit death: quick pitch-drop
+117|         osc("sawtooth", 300, 70, 0.004, 0.18, 0.35); noise(700, 0.003, 0.1, 0.2, "bandpass"); break;
+118|       case "research":  // research complete: bright rising two-note sine
+119|         osc("sine", 520, 780, 0.01, 0.12, 0.4); osc("sine", 780, 1170, 0.01, 0.14, 0.4, 0.09);
+120|         osc("triangle", 1040, 1560, 0.01, 0.1, 0.25, 0.18); break;
+121|       case "spawn":     // unit deployed: soft two-note
+122|         osc("triangle", 330, 440, 0.008, 0.09, 0.3); osc("sine", 440, 660, 0.008, 0.08, 0.2, 0.07); break;
+123|       case "win":       // victory: rising triad
+124|         [523, 659, 784, 1046].forEach((f, i) => { osc("sine", f, f, 0.01, 0.4, 0.35, i * 0.11); osc("triangle", f * 2, f * 2, 0.01, 0.3, 0.12, i * 0.11); });
+125|         noise(3000, 0.01, 0.5, 0.15, "highpass", 0.4); break;
+126|       case "click":     // subtle UI tick
+127|         osc("triangle", 620, 480, 0.002, 0.04, 0.18); break;
+128|       case "error":     // UI error: short descending buzz
+129|         osc("square", 200, 120, 0.004, 0.12, 0.3, 0); osc("square", 150, 90, 0.004, 0.12, 0.25, 0.05); break;
+130|       default: osc("sine", 500, 400, 0.003, 0.05, 0.2);
+131|     }
+132|   };
+133| }
+134| 
+135| let last = 0;
+136| function frame(ts) {
+137|   const dt = Math.min(0.1, (ts - last) / 1000 || 0);
+138|   last = ts;
+139|   if (game && !game.winner) {
+140|     const spd = game.speed || 1;
+141|     for (let i = 0; i < spd; i++) game.update(dt);
+142|     if (ai) ai.tick(dt * spd);
+143|     if (input) input.update(dt);
+144|   }
+145|   if (game && game.onUiTick) game.onUiTick(dt);
+146|   if (renderer && game) renderer.draw(game);
+147|   requestAnimationFrame(frame);
+148| }
+149| 
+150| window.addEventListener("resize", () => renderer && renderer.resize());
+151| 
+152| if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+153| else boot();
+154| requestAnimationFrame(frame);
+### ui drawMinimap DEFINITION
+drawMinimap() {
+    const g = this.g, m = this.mctx, W = MAP_W, H = MAP_H;
+    const cw = this.mm.width, ch = this.mm.height;
+    const sx = cw / W, sy = ch / H;
+    // terrain (downsample 2 tiles per pixel-ish)
+    m.fillStyle = "#20301a"; m.fillRect(0, 0, cw, ch);
+    const ts = g.map.tiles || [];
+    const step = 2;
+    for (let ty = 0; ty < H; ty += step) for (let tx = 0; tx < W; tx += step) {
+      const t = ts[ty * W + tx] || 0;
+      if (t === T.ORE) m.fillStyle = "#6b5a3a";
+      else if (t === T.OIL) m.fillStyle = "#2a2018";
+      else if (t === T.ROCK) m.fillStyle = "#3a3a3a";
+      else if (t === T.TREE) m.fillStyle = "#1c3315";
+      else m.fillStyle = "#24361c";
+      m.fillRect(tx * sx, ty * sy, sx * step, sy * step);
+    }
+    // buildings
+    for (const b of g.buildings) { if (b.dead) continue; m.fillStyle = b.fac === g.player ? "#3fd66f" : "#f0603a"; m.fillRect(b.tx * sx, b.ty * sy, b.w * sx + 1, b.h * sy + 1); }
+    // units (positions are pixels -> divide by TILE for tile space)
+    for (const u of g.units) { if (u.dead || !u.isAlive()) continue; m.fillStyle = u.fac === g.player ? "#8dffae" : "#ffcf6a"; m.fillRect(u.x / TILE * sx - 1, u.y / TILE * sy - 1, 2, 2); 
+### ui MAP_W ctx
+game.canAfford
+//   selection  : game.units[].selected / game.buildings[].selected
+//   camera     : r.cam {x,y,zoom}, canvas css size -> minimap viewport
+/* global document, window */
+import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META } from "./config.js";
+import { T } from "./rand.js";
+import { unitSpriteKey, bSpriteKey, SPRITES } from "./sprites.js";
+
+// unit class -> the factory `produces` value that can build it
+const CLASS_PROD = { infantry: "infantry", tank: "armor", gun: "guns", air: "air" };
+
+export class UI {
+  constructor(root, game, canvas, input) {
+    this.root
+### renderer MAP_W/MAP_H refs (3/3)
+   ..., build ghost. || // Camera: cam.x/y (world px at canvas top-left), cam.zoom. || import { TILE, MAP_W, MAP_H, FACTION_META, BU...
+   ...idth / this.cam.zoom; ||     const vh = this.cv.clientHeight / this.cam.zoom; ||     const ww = MAP_W * TILE, wh = MAP_H * TIL...
+   ...LE) - 1); ||     const y0 = Math.max(0, Math.floor(c.y / TILE) - 1); ||     const x1 = Math.min(MAP_W - 1, Math.ceil((c.x + th...
+   ... ghost. || // Camera: cam.x/y (world px at canvas top-left), cam.zoom. || import { TILE, MAP_W, MAP_H, FACTION_META, BUILDINGS...
+   ...m; ||     const vh = this.cv.clientHeight / this.cam.zoom; ||     const ww = MAP_W * TILE, wh = MAP_H * TILE; ||     this.cam.x =...
+   ...AP_W - 1, Math.ceil((c.x + this.cv.clientWidth / z) / TILE) + 1); ||     const y1 = Math.min(MAP_H - 1, Math.ceil((c.y + th...

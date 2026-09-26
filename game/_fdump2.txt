@@ -1,0 +1,225 @@
+#### CONFIG export const FACTION_META
+export const FACTION_META = {
+  china: { label: "CHINA — Republic of China", color: "#3f7a3f", dark: "#2c5a2c", accent: "#c9a227" },
+  japan: { label: "JAPAN — Empire of Japan",  color: "#5a5f4a", dark: "#3c4032", accent: "#b8452f" },
+};
+
+#### CONFIG export const RES_TIERS
+export const RES_TIERS = {
+  low:    { label: "LOW",    tin: 1100, steel: 125, fuel: 125 },
+  medium: { label: "MEDIUM", tin: 2200, steel: 250, fuel: 250 },
+  high:   { label: "HIGH",   tin: 3600, steel: 400, fuel: 400 },
+  max:    { label: "MAX",    tin: 5000, steel: 600, fuel: 600 },
+};
+
+// AI difficulty (applied to every AI-faction in the match).
+export const AI_DIFF = {
+  easy:   { label: "EASY",   waveGap: 150, nextWave: 110, strength: 1.5,  resourceMult: 0.8,  incomeMult: 0.85, preResearch: [] },
+  medium: { label: "MEDIUM", waveGap: 90,  nextWave: 60,  strength: 1.0,  resourceMult: 1.0,  incomeMult: 1.0,  preResearch: [] },
+  hard:   { label: "HARD",   waveGap: 55,  nextWave: 40,  strength: 0.75, resourceMult: 1.6,  incomeMult: 1.25, preResearch: ["up1a", "up2a"] },
+};
+
+// Skirmish maps (seeded + reproducible).
+export const MAPS = [
+  { id: "m1937", name: "Marco Polo Bridge '37", w: 45, h: 45, seed: 20260924 },
+  { id: "m1938", name: "Shandong Front '38",    w: 60, h: 60, seed: 19381115 },
+  { id: "m1940", name: "Yangtze Delta '40",      w: 80, h: 60, seed: 19400720 },
+  { id: "m1944", name: "Burma Road '44",         w: 70, h: 40, seed: 19440201 },
+];
+
+export const FACS = ["china", "japan"];
+
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per 
+#### CONFIG export const AI_DIFF
+export const AI_DIFF = {
+  easy:   { label: "EASY",   waveGap: 150, nextWave: 110, strength: 1.5,  resourceMult: 0.8,  incomeMult: 0.85, preResearch: [] },
+  medium: { label: "MEDIUM", waveGap: 90,  nextWave: 60,  strength: 1.0,  resourceMult: 1.0,  incomeMult: 1.0,  preResearch: [] },
+  hard:   { label: "HARD",   waveGap: 55,  nextWave: 40,  strength: 0.75, resourceMult: 1.6,  incomeMult: 1.25, preResearch: ["up1a", "up2a"] },
+};
+
+// Skirmish maps (seeded + reproducible).
+export const MAPS = [
+  { id: "m1937", name: "Marco Polo Bridge '37", w: 45, h: 45, seed: 20260924 },
+  { id: "m1938", name: "Shandong Front '38",    w: 60, h: 60, seed: 19381115 },
+  { id: "m1940", name: "Yangtze Delta '40",      w: 80, h: 60, seed: 19400720 },
+  { id: "m1944", name: "Burma Road '44",         w: 70, h: 40, seed: 19440201 },
+];
+
+export const FACS = ["china", "japan"];
+
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRa
+#### CONFIG export const MAPS
+export const MAPS = [
+  { id: "m1937", name: "Marco Polo Bridge '37", w: 45, h: 45, seed: 20260924 },
+  { id: "m1938", name: "Shandong Front '38",    w: 60, h: 60, seed: 19381115 },
+  { id: "m1940", name: "Yangtze Delta '40",      w: 80, h: 60, seed: 19400720 },
+  { id: "m1944", name: "Burma Road '44",         w: 70, h: 40, seed: 19440201 },
+];
+
+export const FACS = ["china", "japan"];
+
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRate: 25,               // fuel/s at own refinery / tank factory
+  refuelRadius: 64,             // px — how close a tank must be to refill
+  aiWaveInterval: 45,
+  aiAggroMin: 4,
+  maxUnitsPerSide: 120,
+  zoomMin: 0.5, zoomMax: 2.0,
+  basePower: 80,
+  baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+};
+
+// ---------- shared building templates (mirrored per faction) ----------
+// placement: any | ore | oil | any_clear
+export const BUILDINGS = {
+ 
+#### CONFIG full TUNE
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRate: 25,               // fuel/s at own refinery / tank factory
+  refuelRadius: 64,             // px — how close a tank must be to refill
+  aiWaveInterval: 45,
+  aiAggroMin: 4,
+  maxUnitsPerSide: 120,
+  zoomMin: 0.5, zoomMax: 2.0,
+  basePower: 80,
+  baseIncomeTin: 2,            // tin/s trickle so a bare base can keep expanding
+};
+#### RAND generateMap
+export function generateMap({ w, h, seed }) {
+  const rng = makeRng(seed);
+  const tiles = new Uint8Array(w * h);       // terrain
+  const rocks = new Set();                   // solid tile coords "x,y"
+  const trees = new Set();
+  const oreSpots = new Set();
+  const oilSpots = new Set();
+  const key = (x, y) => x + "," + y;
+
+  // value-noise-ish clumps
+  const blobs = [];
+  const nBlobs = 14;
+  for (let i = 0; i < nBlobs; i++) {
+    blobs.push({
+      x: 4 + rng() * (w - 8),
+      y: 4 + rng() * (h - 8),
+      r: 2.5 + rng() * 5.5,
+      kind: ["rock", "tree", "ore", "ore", "oil"][Math.floor(rng() * 5)],
+    });
+  }
+  // force ore + oil near each corner (bases need them adjacent)
+  const corners = [
+    { x: 3, y: 3, tag: "NW" }, { x: w - 4, y: h - 4, tag: "SE" },
+    { x: w - 4, y: 3, tag: "NE" }, { x: 3, y: h - 4, tag: "SW" },
+  ];
+  for (const c of corners) {
+    for (let k = 0; k < 3; k++) {
+      const dx = Math.round((rng() - 0.5) * 6), dy = Math.round((rng() - 0.5) * 6);
+      const x = Math.min(w - 2, Math.max(1, c.x + dx));
+      const y = Math.min(h - 2, Math.max(1, c.y + dy));
+      oreSpots.add(key(x, y));
+    }
+    for (let k = 0; k < 2; k++) {
+      const dx = Math.round((rng() - 0.5) * 6), dy = Math.round((rng() - 0.5) * 6);
+      const x = Math.min(w - 2, Math.max(1, c.x + dx));
+      const y = Math.min(h - 2, Math.max(1, c.y + dy));
+      oilSpots.add(key(x, y));
+    }
+  }
+  // blobs scatter
+  for (const b of blobs) {
+    const n = Math.floor(b.r * b.r * 0.8);
+    for (let i = 0; i < n; i++) {
+      const a = rng() * Math.PI * 2;
+      const rr = Math.sqrt
+#### SPRITES checks
+has generateTileSheet: False
+TILES: export const TILES = { grass: null, ore: null, oil: null, rock: null, tree: null };
+
+export function buildTiles() {
+  // grass
+  let { c, g } = mkCanvas(32, 32);
+  g.fillStyle = "#6b8a4a"; g.fillRect(0, 0, 32, 32);
+  g.fillStyle = "rgba(90,120,60,.6)";
+  for (let i = 0; i < 22; i++) g.fillRect(Math.random() * 30, Math.random() * 30, 2, 2);
+  g.fillStyle = "rgba(60,86,40,.5)";
+  for (let i = 0; i < 10; i++) g.fillRect(Math.random() * 30, Math.random() * 30, 3, 2);
+  TILES.grass = c;
+  // ore
+  ({
+buildTiles: function buildTiles() {
+  // grass
+  let { c, g } = mkCanvas(32, 32);
+  g.fillStyle = "#6b8a4a"; g.fillRect(0, 0, 32, 32);
+  g.fillStyle = "rgba(90,120,60,.6)";
+  for (let i = 0; i < 22; i++) g.fillRect(Math.random() * 30, Math.random() * 30, 2, 2);
+  g.fillStyle = "rgba(60,86,40,.5)";
+  for (let i = 0; i < 10; i++) g.fillRect(Math.random() * 30, Math.random() * 30, 3, 2);
+  TILES.grass = c;
+  // ore
+  ({ c, g } = mkCanvas(32, 32));
+  TILES.grass.getContext("2d").drawImage ? null : null;
+  g.drawImage(TILES.grass, 0, 0);
+  g.fillStyle = "#c77b32";
+  g.beginPath(); g.moveTo(10, 24); g.lineTo(16
+export names: SPRITES, SPRITE_OVERRIDES, TILES, _bId, _unitKey, bSpriteKey, buildSprites, buildTiles, loadArtOverrides, unitSpriteKey
+#### ENGINE setupBases
+setupBases() {
+    // China: NW corner (3,3). Japan: SE corner. Map gen clears 5x5 around each corner.
+    const spots = [
+      { fac: "china", cx: 3, cy: 3 },
+      { fac: "japan", cx: this.map.w - 4, cy: this.map.h - 4 },
+    ];
+    const inb = (x, y) => x >= 0 && y >= 0 && x < this.map.w && y < this.map.h;
+    const freeTile = (x, y) => inb(x, y) && this.map.buildable(x, y) && !this.buildingAt(x, y) && !this.occupied.has(x + "," + y);
+    const scan = (cx, cy, kind, maxD) => {
+      for (let d = 0; d <= maxD; d++)
+        for (let dy = -d; dy <= d; dy++)
+          for (let dx = -d; dx <= d; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue;
+            const x = cx + dx, y = cy + dy;
+            if (!inb(x, y)) continue;
+            const has = kind === "ore" ? this.map.hasOre(x, y) : this.map.hasOil(x, y);
+            if (!has || !freeTile(x, y)) continue;
+            return [x, y];
+          }
+      return null;
+    };
+    for (const s of spots) {
+      const fac = s.fac, { cx, cy } = s;
+      const place = (id, x, y) => {
+        const b = this.startBuild(id, fac, x, y);
+        if (!b) return null;
+        b.buildT = b.built;          // start pre
+ENGINE map fields: ['map.buildable', 'map.h', 'map.hasOil', 'map.hasOre', 'map.rocks', 'map.w']
+ENGINE resMult count: 3

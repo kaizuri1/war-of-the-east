@@ -1,0 +1,219 @@
+== UI.js drawMinimap + showOver ==
+his.refreshRes();
+    this.refreshSel();
+    this.drawMinimap();
+    // keep card affordability / tier-unlocks / research state live (1s cadence)
+    g._gridAcc = (g._gridAcc || 0) + 0.15;
+    if (g._gridAcc >= 1) { g._gridAcc = 0; this.refresh(); }
+  }
+  refreshSel() {
+    const g = this.g;
+    const su = g.units.filter((u) => u.selected && !u.dead && u.isAlive());
+    const sb = g.buildings.filter((b) => b.selected && !b.dead && b.isAlive());
+    const el = this.root.querySelector("#sel");
+    let h = "";
+    if (su.length) {
+      const c = su[0].cfg;
+      const hp = Math.round(su.reduce((a, u) => a + u.hp, 0) / su.length);
+      h = `<div class="selhead"><span>${c.name}${su.length > 1 ? " ×" + su.length : ""}</span><span class="tag">${c.class}</span></div>
+          <div class="selrow">avg hp ${hp}/${c.hp}</div>
+          <div class="selrow dim">dmg ${c.dmg} · range ${Math.round(c.range)} · sp ${c.speed}</div>
+          <div class="selhint">RMB move · RMB+enemy attack · CTR+1..5 group</div>`;
+    } else if (sb.length) {
+      const b = sb[0], q = b.queue || [];
+      h = `<div class="selhead"><span>${b.cfg.name}</span><span class="tag">${b.cfg.produces || "building"}</span></div>
+          <div class="selrow">hp ${Math.round(b.hp)}/${b.maxHp}${b.underConstruction() ? " · under construction" : ""}${b.underpowered ? " · ⚠ NO POWER" : ""}</div>
+          ${b.cfg.slots ? `<div class="selrow">queue ${q.length}/${b.cfg.slots}${q.length ? " · " + q.map((x) => UNITS[x]?.name || x).join(", ") : " · empty"}</div>
+          <button class="selbtn" data-queue>✕ POP QUEUE</button>` : ""}`;
+    } else {
+      h = `<div class="selhint">Left drag = select · RMB = move/attack<br>Cmd bar: <b>B</b>uildings <b>I</b>nfantry <b>V</b>ehicles <b>R</b>esearch<br>Space = pause · Esc = cancel build</div>`;
+    }
+    if (el._h !== h) { el.innerHTML = h; el._h = h; }
+  }
+
+  drawMinimap() {
+    const g = this.g, m = this.mctx, W = MAP_W, H = MAP_H;
+    const cw = this.mm.width, ch = this.mm.height;
+    const sx = cw / W, sy = ch / H;
+    // terrain (downsample 2 tiles per pixel-ish)
+    m.fillStyle = "#20301a"; m.fillRect(0, 0, cw, ch);
+    const ts = g.map.tiles || [];
+    const step = 2;
+    for (let ty = 0; ty < H; ty += step) for (l
+---showOver---
+showOver(winner) {
+    const g = this.g;
+    const win = winner === g.player;
+    const ov = this.root.querySelector("#over");
+    ov.querySelector(".over-title").textContent = win ? "VICTORY — 大捷" : "DEFEAT — 敗北";
+    ov.querySelector(".over-title").className = "over-title " + (win ? "win" : "lose");
+    ov.querySelector(".over-sub").textContent = win
+      ? `The enemy depot has fallen. ${g.playerName} holds the East.`
+      : `Your depot has fallen. ${g.aiName} takes the East.`;
+    ov.classList.remove("hidden");
+    if (!this._overBound) {
+      this._overBound = true;
+      const restart = () => location.reload();
+      ov.querySelector("#overRestart").addEventListener("click", restart);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && g.winner) restart();
+      });
+    }
+  }  // engine already played "win" at the winning moment
+  // Per-frame lightweight update (resources, selection, minimap, build grid)
+  uiTick(dt) {
+    const g = this.g;
+    g._uiAcc = (g._uiAcc || 0) + dt;
+    if (g._uiAcc < 0.15) return;      // throttle full DOM to ~6fps
+    g._uiAcc = 0;
+    this.refreshRes();
+    this.refreshSel();
+    this.drawMinimap();
+    // keep 
+== CONFIG: TUNE block ==
+export const TUNE = {
+  underpowerMult: 0.5,          // production speed when short on power
+  sellRefund: 0.5,
+  captureRate: 0.06,            // fraction of building max HP captured per second by 1 eng
+  captureBuildingRate: 0.15,    // fraction of building max HP REPAIRED per second by 1 eng on own building
+  repairRate: 15,               // hp/s per engineer on a friendly unit
+  maxEngineersPerSide: 12,      // cap so AI can't flood the field with walking field hospitals
+  fuelBurn: 0.15,               // fuel/s for a moving, loaded tank (scaled by fuel/max)
+  fuelFullSpeedMult: 1.0,
+  fuelEmptySpeedMult: 0.4,
+  refuelRate: 25,               // fuel/s at own refinery / tank factory
+  re
+== CONFIG: START ==
+export const START = {
+  tin: 2200, steel: 250, fuel: 250,
+  seed: 20260924
+};
+
+// Resource spawn tiers — SKIRMISH "star
+== ENGINE lines 1-90 ==
+// WAR OF THE EAST — engine.js
+// Game object: state, fixed-dt tick, economy (tin/steel/fuel), power,
+// production, research, projectiles, counters, win/lose.
+// main.js drives it; input.js / ui.js / ai.js hook in.
+import { UNITS, BUILDINGS, UPGRADES, TUNE, TILE, FACTION_META, START, producible, AI_DIFF } from "./config.js";
+import * as E from "./entities.js";
+import { nearestEnemy as nE } from "./entities.js";
+
+class Projectile {
+  constructor(x, y, target, fac, dmg, splash, cls) {
+    this.x = x; this.y = y;
+    this.target = target;
+    this.tx = target.x; this.ty = target.y;
+    this.fac = fac; this.dmg = dmg;
+    this.splash = splash; this.cls = cls; // infantry|tank|gun|air|def
+    this.alt = Math.random() * 10 + 8;    // visual arc
+    this.speed = 380;
+    this.dead = false;
+    this.life = 2.0;
+  }
+}
+
+export class Game {
+  constructor(map, opts = {}) {
+    this.map = map;
+    this.time = 0;
+    this.units = [];
+    this.buildings = [];
+    this.projectiles = [];
+    this.events = [];
+    this.occupied = new Set();      // "x,y" tiles blocked (units + buildings)
+    this.player = opts.player || "china";
+    this.aiFac = this.player === "china" ? "japan" : "china";
+    this.winner = null;
+    this.paused = false;
+    this.speed = 1;                 // 1/2/3 game speed
+    this.playerName = FACTION_META[this.player].nameEN;
+    this.aiName = FACTION_META[this.aiFac].nameEN;
+    this.diff = (opts.diff && AI_DIFF[opts.diff]) || null;
+    this.fac = {};
+    const aiMult = this.diff ? this.diff.resourceMult : 1.0;
+    for (const f of ["china", "japan"]) {
+      this.fac[f] = {
+        res: {
+          tin: (f === this.aiFac ? START.tin * aiMult : START.tin) * (opts.resMult || 1),
+          steel: (f === this.aiFac ? START.steel * aiMult : START.steel) * (opts.resMult || 1),
+          fuel: (f === this.aiFac ? START.fuel * aiMult : START.fuel) * (opts.resMult || 1),
+        },
+        incomeMult: f === this.aiFac && this.diff ? this.diff.incomeMult : 1.0,
+        power: { gen: TUNE.basePower, draw: 0, ok: true },
+        upgrades: new Set(),
+        needsLock205: f === "japan",  // Type 205 needs Super-Heavy Program
+      };
+    }
+    this._sfx = null; this._onWin = null; this.onUiTick = null;
+  }
+  attach(o = {}) { this._sfx = o.sfx || null; this._onWin = o.onWin; }
+  setupBases() {
+    // China: NW corner (3,3). Japan: SE corner. Map gen clears 5x5 around each corner.
+    const spots = [
+      { fac: "china", cx: 3, cy: 3 },
+      { fac: "japan", cx: this.map.w - 4, cy: this.map.h - 4 },
+    ];
+    const inb = (x, y) => x >= 0 && y >= 0 && x < this.map.w && y < this.map.h;
+    const freeTile = (x, y) => inb(x, y) && this.map.buildable(x, y) && !this.buildingAt(x, y) && !this.occupied.has(x + "," + y);
+    const scan = (cx, cy, kind, maxD) => {
+      for (let d = 0; d <= maxD; d++)
+        for (let dy = -d; dy <= d; dy++)
+          for (let dx = -d; dx <= d; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue;
+            const x = cx + dx, y = cy + dy;
+            if (!inb(x, y)) continue;
+            const has = kind === "ore" ? this.map.hasOre(x, y) : this.map.hasOil(x, y);
+            if (!has || !freeTile(x, y)) continue;
+            return [x, y];
+          }
+      return null;
+    };
+    for (const s of spots) {
+      const fac = s.fac, { cx, cy } = s;
+      const place = (id, x, y) => {
+        const b = this.startBuild(id, fac, x, y);
+        if (!b) return null;
+        b.buildT = b.built;          // start pre-built (instant)
+        this.rebuildOccupied();
+        return b;
+      };
+      // clear the 2x2 depot footprint + margin tiles (map already did, belt & braces)
+      for (let dy = -2; dy <= 3; dy++) for (let dx = -2; dx <= 3; dx++) {
+        const x = cx + dx, y = cy + dy;
+== SPRITES first 30 lines + export lines ==
+// WAR OF THE EAST — sprites.js
+// Procedural placeholder top-down art, generated once at boot from the config
+// tables. Every unit/building id gets a Canvas. Drop-in replacement: put a PNG
+// at art/sprites/<id>.png (or point SPRITE_OVERRIDES[id] at an image) and it
+// will be used instead — identical footprints, so nothing else changes.
+export const SPRITE_OVERRIDES = {}; // id -> HTMLImageElement (external)
+
+// Optional drop-in art: put PNGs in art/sprites/<class>/<id>.png (units/,
+// buildings/, tiles/) and list the ids in art/sprites/manifest.json, e.g.
+// {"units": ["c_inf"], "buildings": ["depot"], "tiles": ["grass"]}
+// Anything not listed falls back to the procedural art below. A bare
+// "buildings/depot.png" serves both factions; "china_depot.png" overrides one.
+// Failures are silent (file:// or missing folder = pure procedural game).
+import { UNITS, BUILDINGS, FACTION_META } from "./config.js";
+
+export function loadArtOverrides(manifestUrl = "art/sprites/manifest.json") {
+  return fetch(manifestUrl)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m) => {
+      if (!m) return;
+      const want = (ids, dir) => (ids || []).map((id) => {
+        const img = new Image();
+        img.src = `art/sprites/${dir}/${id}.png`;
+        SPRITE_OVERRIDES[id] = img;
+        return img;
+6| export const SPRITE_OVERRIDES = {}; // id -> HTMLImageElement (external)
+16| export function loadArtOverrides(manifestUrl = "art/sprites/manifest.json") {
+237| export const SPRITES = {};
+238| export const _unitKey = new Map(); // unit cfg object -> sprite id
+239| export const _bId = new Map();     // building cfg object -> building id (sprite key = fac + "_" + id)
+240| export function unitSpriteKey(cfg) { return _unitKey.get(cfg) || "u_unknown"; }
+241| export function bSpriteKey(fac, cfg) { return fac + "_" + (_bId.get(cfg) || "depot"); }
+243| export function buildSprites() {
+268| export const TILES = { grass: null, ore: null, oil: null, rock: null, tree: null };
+270| export function buildTiles() {

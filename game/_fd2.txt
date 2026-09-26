@@ -1,0 +1,187 @@
+##### GAME.CSS FULL #####
+1| /* War of the East — C&C-style layout.
+2|    Canvas #view fills the frame. Overlaid by:
+3|    #res  (top resource strip) · #command (RIGHT vertical build panel + tabs)
+4|    #hud-bottom (bottom-left minimap + selection panel). */
+5| 
+6| * { box-sizing: border-box; margin: 0; padding: 0; }
+7| html, body { height: 100%; overflow: hidden; }
+8| body {
+9|   background: #0a0d0a;
+10|   color: #d8d2b0;
+11|   font-family: "Trebuchet MS", "MS Gothic", sans-serif;
+12|   font-size: 13px;
+13|   -webkit-user-select: none; user-select: none;
+14| }
+15| 
+16| #game { position: absolute; inset: 0; outline: none; }
+17| 
+18| #view {
+19|   position: absolute; inset: 0;
+20|   width: 100%; height: 100%;
+21|   display: block;
+22|   background: #2a2e22;
+23|   image-rendering: pixelated;
+24|   cursor: crosshair;
+25| }
+26| 
+27| /* ---------- top resource strip ---------- */
+28| #res {
+29|   position: absolute; top: 0; left: 0; right: 0; height: 26px;
+30|   display: flex; align-items: center; gap: 14px;
+31|   padding: 0 12px;
+32|   background: linear-gradient(#1c2016cc, #10130cd0);
+33|   border-bottom: 1px solid #4a4a2c;
+34|   z-index: 6; pointer-events: none;
+35| }
+36| #res .ri { display: flex; align-items: baseline; gap: 4px; font-size: 12px; color: #9a9468; white-space: nowrap; }
+37| #res .ri b { font-size: 14px; font-weight: bold; color: #e8e0b0; }
+38| #res .ri.low b { color: #ff7a4a; }
+39| #res .ri.paused, #res .ri.over { margin-left: auto; color: #ffd24a; font-size: 12px; letter-spacing: 1px; }
+40| #res .ri.over b { color: #ffd24a; }
+41| 
+42| /* ---------- command panel (RIGHT side, tabbed) ---------- */
+43| #command {
+44|   position: absolute; top: 30px; right: 8px; bottom: 8px; width: 206px;
+45|   display: flex; flex-direction: column;
+46|   background: linear-gradient(#171a10e6, #0d0f08e6);
+47|   border: 1px solid #4a4a2c;
+48|   border-radius: 3px;
+49|   box-shadow: 0 0 18px rgba(0,0,0,.5);
+50|   z-index: 6; overflow: hidden;
+51| }
+52| #cmdTabs {
+53|   display: grid; grid-template-columns: 1fr 1fr; gap: 3px;
+54|   padding: 4px;
+55|   border-bottom: 1px solid #3a3a22;
+56|   background: #101309;
+57| }
+58| .cmd-tab {
+59|   position: relative;
+60|   display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+61|   gap: 1px;
+62|   padding: 5px 6px 4px;
+63|   border: 1px solid #2e2e1c;
+64|   border-radius: 2px;
+65|   background: #1c2014;
+66|   cursor: pointer;
+67|   line-height: 1.1;
+68| }
+69| .cmd-tab .ct-label { font-size: 11px; font-weight: bold; letter-spacing: .5px; color: #c9c39a; }
+70| .cmd-tab kbd {
+71|   position: absolute; top: 2px; right: 4px;
+72|   font-size: 9px; color: #7a7450;
+73|   border: 1px solid #3a3a22; border-radius: 2px; padding: 0 3px;
+74| }
+75| .cmd-tab:hover { background: #242818; border-color: #5a5a34; }
+76| .cmd-tab.on {
+77|   background: linear-gradient(#3a3c1e, #2a2c14);
+78|   border-color: #ffd24a;
+79| }
+80| .cmd-tab.on .ct-label { color: #ffd24a; }
+81| .cmd-tab.on kbd { color: #ffd24a; border-color: #7a5a1c; }
+82| 
+83| #cmdBody { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 5px; }
+84| 
+85| /* ---------- build/unit/research cards ---------- */
+86| .card {
+87|   display: flex; align-items: center; gap: 6px;
+88|   padding: 3px 4px; margin: 2px 0;
+89|   border: 1px solid #2e2e1c;
+90|   background: #1c2014;
+91|   border-radius: 2px;
+92|   cursor: pointer;
+93| }
+94| .card:hover { background: #262a1a; border-color: #5a5a34; }
+95| .card.off { opacity: .42; }
+96| .card.active { border-color: #ffd24a; background: #2e2e14; box-shadow: 0 0 6px rgba(255,210,74,.3) inset; }
+97| .card.done { opacity: .55; cursor: default; border-style: dashed; }
+98| 
+99| .thumb {
+100|   width: 36px; height: 36px; flex: none;
+101|   display: flex; align-items: center; justify-content: center;
+102|   background: #10130a;
+103|   border: 1px solid #34341e; border-radius: 2px;
+104|   font-weight: bold; font-size: 13px; color: #9a9468;
+105| }
+106| .thumb img { width: 34px; height: 34px; image-rendering: pixelated; }
+107| .thumb.rs { color: #ffd24a; font-size: 12px; }
+108| .thumb.air { border-color: #3a5a6a; }
+109| .thumb.veh { border-color: #4a5a3a; }
+110| 
+111| .cbody { flex: 1; min-width: 0; }
+112| .cbody .nm { font-size: 12px; color: #e9e2bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+113| .cbody .meta { font-size: 9.5px; color: #8a8458; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; line-height: 1.3; }
+114| .cbody .meta em.no { color: #ff9a6a; font-style: italic; }
+115| .cost { font-size: 10px; color: #9a9468; white-space: nowrap; margin-left: 2px; }
+116| .lock { display: inline-block; margin-left: 4px; font-size: 9px; color: #ffd24a; border: 1px solid #7a5a1c; border-radius: 2px; padding: 0 3px; vertical-align: middle; }
+117| .dim { opacity: .5; font-size: 11px; padding: 6px; text-align: center; }
+118| 
+119| /* ---------- bottom-left: minimap + selection ---------- */
+120| #hud-bottom {
+121|   position: absolute; left: 8px; bottom: 8px;
+122|   display: flex; flex-direction: column; gap: 6px;
+123|   z-index: 6;
+124| }
+125| #mmwrap {
+126|   width: 180px; height: 180px;
+127|   border: 2px solid #4a4a2c;
+128|   background: #0a0d0a;
+129|   box-shadow: 0 0 14px rgba(0,0,0,.5);
+130| }
+131| #minimap { width: 100%; height: 100%; display: block; cursor: crosshair; image-rendering: pixelated; }
+132| 
+133| #sel {
+134|   width: 180px;
+135|   background: linear-gradient(#171a10e6, #0d0f08e6);
+136|   border: 1px solid #4a4a2c;
+137|   border-radius: 3px;
+138|   padding: 5px 6px;
+139|   font-size: 11px;
+140| }
+141| .selhead { display: flex; justify-content: space-between; gap: 6px; font-weight: bold; color: #e9e2bd; font-size: 12px; }
+142| .selhead .tag { color: #8a8458; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; align-self: center; }
+143| .selrow { margin-top: 2px; color: #c9c39a; line-height: 1.35; }
+144| .selrow.dim { color: #8a8458; }
+145| .selhint { color: #8a8458; font-size: 10px; line-height: 1.5; }
+146| .selhint b { color: #c9c39a; }
+147| .selbtn {
+148|   margin-top: 4px;
+149|   font-size: 10px; padding: 2px 8px;
+150|   background: #2c2c14; color: #e9e2bd;
+151|   border: 1px solid #7a5a1c; border-radius: 2px;
+152|   cursor: pointer;
+153| }
+154| .selbtn:hover { background: #3a3c1e; border-color: #ffd24a; }
+155| 
+156| /* ---------- scrollbars ---------- */
+157| ::-webkit-scrollbar { width: 8px; }
+158| ::-webkit-scrollbar-thumb { background: #3a3a22; border-radius: 4px; }
+159| ::-webkit-scrollbar-track { background: #12150c; }
+160| 
+161| /* ---------- game over ---------- */
+162| #over {
+163|   position: absolute; inset: 0; z-index: 90;
+164|   display: flex; align-items: center; justify-content: center;
+165|   background: rgba(8, 10, 5, 0.72);
+166|   backdrop-filter: blur(2px);
+167| }
+168| #over.hidden { display: none; }
+169| .over-card {
+170|   background: linear-gradient(180deg, #20241a, #14180f);
+171|   border: 2px solid #7a5a1c; border-radius: 6px;
+172|   padding: 34px 56px; text-align: center;
+173|   box-shadow: 0 0 40px rgba(0, 0, 0, 0.7);
+174| }
+175| .over-title {
+176|   font-size: 44px; font-weight: 700; letter-spacing: 6px; margin-bottom: 10px;
+177| }
+178| .over-title.win { color: #ffd24a; text-shadow: 0 0 18px rgba(255, 210, 74, 0.5); }
+179| .over-title.lose { color: #d94b3a; text-shadow: 0 0 18px rgba(200, 70, 50, 0.5); }
+180| .over-sub { color: #cfc9a4; font-size: 15px; margin-bottom: 22px; }
+181| .overbtn {
+182|   background: #2c2c14; color: #ffd24a;
+183|   border: 1px solid #7a5a1c; border-radius: 3px;
+184|   padding: 10px 26px; font-size: 14px; letter-spacing: 2px; cursor: pointer;
+185| }
+186| .overbtn:hover { background: #3a3c1e; border-color: #ffd24a; }
