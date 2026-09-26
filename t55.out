@@ -1,0 +1,9 @@
+A: idle auto-acquire  PASS
+A: fires within 3s     PASS (shots=1)
+B: walking auto-acquire PASS (target=j_inf, t=0.0s)
+B: engaged & damaged PASS (hp 52->7, alive=true)
+(debug) bunker building cfg exists: true
+C: building auto-engagement PASS
+C: building takes damage PASS (hp 423/450)
+D: free walk still works PASS (moved 78px)
+RESULT: ALL PASS
