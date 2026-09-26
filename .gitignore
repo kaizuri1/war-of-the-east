@@ -5,3 +5,8 @@ _*.py
 # OS junk
 .DS_Store
 Thumbs.db
+
+# scratch / backups
+*.before-*
+*_probe.html
+*_files_meta.txt
