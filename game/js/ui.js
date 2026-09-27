@@ -44,6 +44,7 @@ export class UI {
         <div id="cmdTabs"></div>
         <div id="cmdBody" class="cmd-scroll"></div>
       </div>
+      <div id="cmdToggle" title="Show/hide build panel (H)">»</div>
       <div id="hud-bottom">
         <div id="mmwrap">
           <canvas id="minimap" width="180" height="180"></canvas>
@@ -61,9 +62,9 @@ export class UI {
         <div class="over-card">
           <div class="over-title" style="color:#e8e4d8">⏸ PAUSED</div>
           <div class="over-sub" style="padding:6px 0">
-            <b>Move:</b> RMB on map · <b>Build:</b> LMB card → LMB place<br>
-            <b>Cancel build:</b> Esc / RMB · <b>Pause:</b> Esc (out of build) / Space / F10 / F12<br>
-            <b>Speed:</b> F1 / F2 / F3 · <b>Repair:</b> U on selected building · <b>Groups:</b> CTR+1..5 · <b>Pan:</b> WASD / edge
+            <b>Move:</b> RMB on map · <b>Build:</b> LMB card → LMB place · <b>Cancel build:</b> Esc / RMB<br>
+            <b>Pause:</b> Space / Esc (no ghost) / F10 / F12 · <b>Hide command bar:</b> H (or the tab handle)<br>
+            <b>Speed:</b> F1 / F2 / F3 · <b>Repair:</b> U on selected building · <b>Groups:</b> CTR+1..5 · <b>Pan:</b> WASD / edge / MMB
           </div>
           <button class="overbtn" id="pauseResume">RESUME — ESC</button>
         </div>
@@ -86,6 +87,17 @@ export class UI {
   attachSfx() { this._sfx = this.g._sfx; }
   // keep input.buildItem in sync with what the cards highlight
   setBuildActive(id) { this._buildId = id; if (this.input) this.input.buildItem = id; }
+  // Bug 3: show/hide the right build bar so the whole map is visible.
+  // H key or the tab handle (#cmdToggle) toggles it. The bar element + its
+  // listeners survive (display:none), so refresh() keeps working while hidden.
+  toggleBar() {
+    const cmd = this.root.querySelector("#command");
+    const tg = this.root.querySelector("#cmdToggle");
+    if (!cmd || !tg) return;
+    const nowHidden = cmd.classList.toggle("hidden");
+    tg.textContent = nowHidden ? "«" : "»";
+    tg.title = nowHidden ? "Show build panel (H)" : "Hide build panel (H)";
+  }
 
   // ---- tabs -------------------------------------------------------------
   buildTabs() {
@@ -110,7 +122,12 @@ export class UI {
       if (this.g && !this.g.winner && !e.ctrlKey && !e.altKey && !e.metaKey && document.activeElement.tagName !== "INPUT") {
         const map = { b: "BUILDINGS", i: "INFANTRY", v: "VEHICLES", r: "RESEARCH" };
         const k = e.key.toLowerCase();
-        if (map[k] && map[k] !== this.tab) { this.tab = map[k]; this.beep("click"); this.refresh(); }
+        if (k === "h") { this.toggleBar(); return; }
+        if (map[k] && map[k] !== this.tab) {
+          // tab hotkey while the panel is hidden → reveal it, then switch tab
+          if (this.root.querySelector("#command").classList.contains("hidden")) this.toggleBar();
+          this.tab = map[k]; this.beep("click"); this.refresh();
+        }
       }
     });
   }
@@ -121,6 +138,9 @@ export class UI {
       if (!it) return;
       this.onCard(it.dataset.kind, it.dataset.id);
     });
+    // Bug 3: panel hide/show tab handle (H key is handled in buildTabs)
+    const tg = this.root.querySelector("#cmdToggle");
+    if (tg) tg.addEventListener("click", () => this.toggleBar());
     // minimap: click/drag to center the camera
     const mm = this.mm;
     let mmDrag = false;
@@ -384,7 +404,7 @@ export class UI {
           <button class="selbtn" data-sell>💰 SELL +${refund} tin</button>
           <div class="selhint">U repair · SELL button below</div>`;
     } else {
-      h = `<div class="selhint">Left drag = select · RMB = move/attack<br>Cmd bar: <b>B</b>uildings <b>I</b>nfantry <b>V</b>ehicles <b>R</b>esearch<br>Space = pause · Esc = cancel build</div>`;
+      h = `<div class="selhint">Left drag = select · RMB = move/attack<br>Cmd bar: <b>B</b>uildings <b>I</b>nfantry <b>V</b>ehicles <b>R</b>esearch · <b>H</b>ide bar<br>Space = pause · Esc = cancel build / pause</div>`;
     }
     if (el._h !== h) { el.innerHTML = h; el._h = h; }
   }

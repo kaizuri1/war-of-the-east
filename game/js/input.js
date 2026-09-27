@@ -174,14 +174,11 @@ export class Input {
     const g = this.game;
     const wp = this.screenToWorld(mx, my);
     if (this.buildItem) {
-      const gh = this.ghostAt(mx, my);
-      if (gh && gh.ok) {
-        if (g.startBuild(this.buildItem, g.player, gh.tx, gh.ty) && !this._s) this.setBuild(null);
-      }
-      else {
-        // can't build here → RMB cancels the ghost and restores the cursor
-        this.setBuild(null);
-      }
+      // C&C behaviour: RMB while a build ghost is up ONLY cancels the ghost
+      // (also the old bug: a "deselect" right-click actually built the unit).
+      // LMB places, Esc also cancels. RMB must never call startBuild.
+      this.setBuild(null);
+      this.r.buildGhost = null;
       return;
     }
     const selU = g.units.filter((u) => u.selected && !u.dead && u.isAlive());

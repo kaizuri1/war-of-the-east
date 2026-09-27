@@ -82,6 +82,19 @@ body {
 
 #cmdBody { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 5px; }
 
+/* Bug 3: hide/show tab handle — sticks out of the panel's left edge so it
+   stays reachable when #command is .hidden (the full map becomes visible). */
+#cmdToggle {
+  position: absolute; top: 110px; right: 214px;
+  width: 13px; height: 44px;
+  background: linear-gradient(#171a10e6, #0d0f08e6);
+  border: 1px solid #4a4a2c; border-radius: 3px 0 0 3px;
+  color: #9a9468; font-size: 12px; line-height: 42px; text-align: center;
+  cursor: pointer; z-index: 5;
+  pointer-events: auto;
+}
+#cmdToggle:hover { color: #ffd24a; border-color: #ffd24a; }
+
 /* ---------- build/unit/research cards ---------- */
 .card {
   display: flex; align-items: center; gap: 6px;
@@ -159,7 +172,8 @@ body {
 ::-webkit-scrollbar-track { background: #12150c; }
 /* ---------- pause overlay ---------- */
 #pause {
-  position: absolute; inset: 0; z-index: 85;
+  position: absolute; inset: 0; z-index: 95; /* above #over (90): the pause
+     screen dims its own button too, so #pauseResume wins over any other chip */
   display: flex; align-items: center; justify-content: center;
   background: rgba(8, 10, 5, 0.55);
 }
