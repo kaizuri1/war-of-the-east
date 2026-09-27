@@ -207,12 +207,18 @@ export class Input {
     }
     for (const u of selU) {
       if (u.isStatic()) continue; // static guns don't move
-      if (tgt) { u.target = tgt; u.fx = null; u.fy = null; u.moveOrder = null; u.attackMove = false; }
+      if (tgt) { u.target = tgt; u.fx = null; u.fy = null; u.moveOrder = null; u.attackMove = false; u._follow = false; }
       else {
         u.fx = Math.floor(wp.x / TILE); u.fy = Math.floor(wp.y / TILE);
         u.moveOrder = { x: wp.x, y: wp.y };
         u.path = null;
-        u.attackMove = !tgt;
+        // Plain walk: the unit holds its course and does NOT auto-lock onto
+        // enemies along the way, so a fresh order always beats a stale
+        // auto-attack (no more "stuck attacking a building that just rebuilt").
+        // Units still fire at anything already latched, and attack-moves stay
+        // available (see UI) to re-engage.
+        u.attackMove = false;
+        u._follow = true;
       }
     }
     if (this.ui) this.ui.refresh();

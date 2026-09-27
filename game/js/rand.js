@@ -17,7 +17,7 @@ export const T = {
   GRASS: 0, ORE: 1, OIL: 2, ROCK: 3, TREE: 4, ROAD: 5,
 };
 
-export function generateMap({ w, h, seed }) {
+export function generateMap({ w, h, seed, corners }) {
   const rng = makeRng(seed);
   const tiles = new Uint8Array(w * h);       // terrain
   const rocks = new Set();                   // solid tile coords "x,y"
@@ -37,12 +37,14 @@ export function generateMap({ w, h, seed }) {
       kind: ["rock", "tree", "ore", "ore", "oil"][Math.floor(rng() * 5)],
     });
   }
-  // force ore + oil near each corner (bases need them adjacent)
-  const corners = [
+  // force ore + oil near each corner (bases need them adjacent).
+  // `corners` lets the engine pass the ACTUAL base spawn points (which are
+  // offset from the map edge); defaults to the raw map corners.
+  const cs = corners || [
     { x: 3, y: 3, tag: "NW" }, { x: w - 4, y: h - 4, tag: "SE" },
     { x: w - 4, y: 3, tag: "NE" }, { x: 3, y: h - 4, tag: "SW" },
   ];
-  for (const c of corners) {
+  for (const c of cs) {
     for (let k = 0; k < 3; k++) {
       const dx = Math.round((rng() - 0.5) * 6), dy = Math.round((rng() - 0.5) * 6);
       const x = Math.min(w - 2, Math.max(1, c.x + dx));
@@ -82,7 +84,7 @@ export function generateMap({ w, h, seed }) {
     else { rocks.add(k); tiles[y * w + x] = T.ROCK; }
   }
   // clear base corners (2x2 + margin)
-  for (const c of corners) {
+  for (const c of cs) {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
       const x = c.x + dx, y = c.y + dy;
       if (x < 0 || y < 0 || x >= w || y >= h) continue;

@@ -27,17 +27,17 @@ export const RES_TIERS = {
 
 // AI difficulty (applied to every AI-faction in the match).
 export const AI_DIFF = {
-  easy:   { label: "EASY",   waveGap: 150, nextWave: 110, strength: 1.5,  resourceMult: 0.8,  incomeMult: 0.85, preResearch: [] },
-  medium: { label: "MEDIUM", waveGap: 90,  nextWave: 60,  strength: 1.0,  resourceMult: 1.0,  incomeMult: 1.0,  preResearch: [] },
-  hard:   { label: "HARD",   waveGap: 55,  nextWave: 40,  strength: 0.75, resourceMult: 1.6,  incomeMult: 1.25, preResearch: ["up1a", "up2a"] },
+  easy:   { label: "EASY",   waveGap: 150, nextWave: 110, strength: 1.5,  resourceMult: 0.8,  incomeMult: 0.85, preResearch: [], rebuildDelay: 45 },
+  medium: { label: "MEDIUM", waveGap: 90,  nextWave: 60,  strength: 1.0,  resourceMult: 1.0,  incomeMult: 1.0,  preResearch: [], rebuildDelay: 30 },
+  hard:   { label: "HARD",   waveGap: 55,  nextWave: 40,  strength: 0.75, resourceMult: 1.6,  incomeMult: 1.25, preResearch: ["up1a", "up2a"], rebuildDelay: 18 },
 };
 
 // Skirmish maps (seeded + reproducible).
 export const MAPS = [
-  { id: "m1937", name: "Marco Polo Bridge '37", w: 45, h: 45, seed: 20260924 },
-  { id: "m1938", name: "Shandong Front '38",    w: 60, h: 60, seed: 19381115 },
-  { id: "m1940", name: "Yangtze Delta '40",      w: 80, h: 60, seed: 19400720 },
-  { id: "m1944", name: "Burma Road '44",         w: 70, h: 40, seed: 19440201 },
+  { id: "m1937", name: "Marco Polo Bridge '37", w: 60, h: 60, seed: 20260924 },
+  { id: "m1938", name: "Shandong Front '38",    w: 72, h: 72, seed: 19381115 },
+  { id: "m1940", name: "Yangtze Delta '40",      w: 96, h: 72, seed: 19400720 },
+  { id: "m1944", name: "Burma Road '44",         w: 84, h: 56, seed: 19440201 },
 ];
 
 export const FACS = ["china", "japan"];

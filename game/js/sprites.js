@@ -50,27 +50,108 @@ function shade(hex, amt) {
   return `rgb(${r},${g},${b})`;
 }
 
-// ---- infantry: small soldier with helmet ----
+// ---- infantry (static top-down): silhouette per role ----
+// roles: inf (rifle), heavy (fat auto-rifle + bulky coat), gren (grenade belt),
+//        mort (mortar tube, crouched), eng (cross on helmet), scout (cap, slim),
+//        elite (gold star)
 function gInfantry(id, fac) {
   const { c, g } = mkCanvas(28, 28);
   const p = PAL[fac];
+  const role =
+    id.endsWith("heavy") ? "heavy" :
+    id.endsWith("gren") ? "gren" :
+    id.endsWith("mort") ? "mort" :
+    id.endsWith("eng") ? "eng" :
+    id.endsWith("scout") ? "scout" :
+    id.endsWith("elite") ? "elite" : "inf";
+  const heavy = role === "heavy";
   // shadow
-  g.fillStyle = "rgba(0,0,0,.25)"; g.beginPath(); g.ellipse(14, 16, 9, 10, 0, 0, 7); g.fill();
-  // rifle (diagonal)
-  if (id.endsWith("heavy") || id.endsWith("mort") || id.endsWith("gren")) {
-    g.strokeStyle = "#3a2f22"; g.lineWidth = 3;
+  g.fillStyle = "rgba(0,0,0,.25)";
+  g.beginPath(); g.ellipse(14, 16, heavy ? 10 : 9, 10, 0, 0, 7); g.fill();
+
+  // --- back-mounted gear (drawn under the coat) ---
+  if (role === "heavy") {
+    // fat auto-rifle slung across the back, two parallel tubes
+    g.strokeStyle = "#3a2f22"; g.lineWidth = 3.5; g.lineCap = "round";
+    g.beginPath(); g.moveTo(21, 23); g.lineTo(7, 9); g.stroke();
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(19, 20); g.lineTo(6, 8); g.stroke();
+  } else if (role === "mort") {
+    // mortar tube (long, thick) + baseplate
+    g.fillStyle = "#6f6553"; g.beginPath(); g.arc(19, 21, 2.2, 0, 7); g.fill();
+    g.strokeStyle = "#4a4133"; g.lineWidth = 4.5; g.lineCap = "round";
+    g.beginPath(); g.moveTo(17, 24); g.lineTo(7, 9); g.stroke();
+    g.strokeStyle = "#2c261c"; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(7, 9); g.lineTo(5.5, 7); g.stroke();
+  } else if (role !== "scout") {
+    // standard rifle (diagonal)
+    g.strokeStyle = "#3a2f22"; g.lineWidth = heavy ? 3 : 2.5; g.lineCap = "round";
     g.beginPath(); g.moveTo(20, 22); g.lineTo(8, 8); g.stroke();
   }
-  // body (coat)
-  g.fillStyle = p.base; g.beginPath(); g.ellipse(14, 15, 7.5, 8.5, 0, 0, 7); g.fill();
-  g.fillStyle = p.dark; g.beginPath(); g.ellipse(14, 17, 7.5, 5, 0, 0, Math.PI); g.fill();
-  // helmet
-  g.fillStyle = p.trim; g.beginPath(); g.arc(14, 9, 5.5, 0, 7); g.fill();
-  g.fillStyle = "rgba(0,0,0,.25)"; g.beginPath(); g.arc(14, 8, 5.5, Math.PI, 2 * Math.PI); g.fill();
-  // elite mark
-  if (id.endsWith("elite")) { g.fillStyle = "#ffd54a"; g.beginPath(); g.arc(14, 9, 2, 0, 7); g.fill(); }
-  // engineer
-  if (id.endsWith("eng")) { g.strokeStyle = "#e0d090"; g.lineWidth = 1.5; g.beginPath(); g.moveTo(9, 14); g.lineTo(19, 14); g.stroke(); }
+
+  // --- body (coat) ---
+  const bw = heavy ? 8.5 : role === "scout" ? 6.5 : 7.5;
+  const bh = heavy ? 9.5 : 8.5;
+  g.fillStyle = role === "scout" ? shade(p.base, 14) : p.base;
+  g.beginPath(); g.ellipse(14, 15, bw, bh, 0, 0, 7); g.fill();
+  g.fillStyle = p.dark;
+  g.beginPath(); g.ellipse(14, 16.5, bw, bh * 0.58, 0, 0, Math.PI); g.fill();
+  // heavy: shoulder pads
+  if (heavy) {
+    g.fillStyle = p.trim;
+    g.beginPath(); g.arc(14 - bw + 1, 10, 2.6, 0, 7); g.fill();
+    g.beginPath(); g.arc(14 + bw - 1, 10, 2.6, 0, 7); g.fill();
+  }
+  // grenadier: grenade band across the waist
+  if (role === "gren") {
+    g.strokeStyle = "#6b5a34"; g.lineWidth = 2.5;
+    g.beginPath(); g.ellipse(14, 17, bw - 1.5, 3.4, 0, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+    g.fillStyle = "#8a713c";
+    for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(10 + i * 4, 19.6, 1.3, 0, 7); g.fill(); }
+  }
+  // engineer: tool on the belt
+  if (role === "eng") {
+    g.strokeStyle = "#b0a070"; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(8, 20); g.lineTo(13, 18.5); g.stroke();
+    g.fillStyle = "#b0a070"; g.beginPath(); g.arc(8, 20, 1.2, 0, 7); g.fill();
+  }
+
+  // --- head ---
+  if (role === "scout") {
+    // soft field cap, no steel helmet
+    g.fillStyle = shade(p.trim, 10); g.beginPath(); g.arc(14, 9.5, 4.6, 0, 7); g.fill();
+    g.fillStyle = p.trim; g.fillRect(9.5, 9, 9, 2.4); // brim/peaked cap
+    g.fillStyle = "rgba(0,0,0,.2)"; g.beginPath(); g.arc(14, 10, 4.6, 0, Math.PI); g.fill();
+  } else {
+    // helmet (mort: slightly lower/crouched)
+    const hy = role === "mort" ? 10 : 9;
+    const hr = heavy ? 6 : 5.5;
+    g.fillStyle = p.trim; g.beginPath(); g.arc(14, hy, hr, 0, 7); g.fill();
+    g.fillStyle = "rgba(0,0,0,.25)"; g.beginPath(); g.arc(14, hy - 0.7, hr, Math.PI, 2 * Math.PI); g.fill();
+    // rim
+    g.strokeStyle = shade(p.trim, -25); g.lineWidth = 1.2;
+    g.beginPath(); g.arc(14, hy, hr, 0, 7); g.stroke();
+    // engineer cross
+    if (role === "eng") {
+      g.strokeStyle = "#f2ede0"; g.lineWidth = 1.6;
+      g.beginPath(); g.moveTo(11.5, hy); g.lineTo(16.5, hy); g.stroke();
+      g.beginPath(); g.moveTo(14, hy - 2.5); g.lineTo(14, hy + 2.5); g.stroke();
+    }
+    // elite gold star
+    if (role === "elite") {
+      g.fillStyle = "#ffd54a";
+      // simple 5-point star
+      const px = 14, py = hy, R = 2.6, r2 = 1.1;
+      g.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5;
+        const rr = i % 2 === 0 ? R : r2;
+        const sx = px + Math.cos(a) * rr, sy = py + Math.sin(a) * rr;
+        i === 0 ? g.moveTo(sx, sy) : g.lineTo(sx, sy);
+      }
+      g.closePath(); g.fill();
+    }
+  }
   return c;
 }
 
@@ -146,21 +227,78 @@ function gTank(id, fac) {
   return c;
 }
 
-// ---- gun (static): base + big barrel ----
+// ---- gun (static field): per-role silhouettes ----
+// AT gun: low shielded emplacement + long thick barrel (tier 2 = heavier shield)
+// AA gun: raised pedestal + 4-barrel flak turret, barrel angled skyward
 function gGun(id, fac) {
-  const heavy = UNITS[id].dmg >= 50 || UNITS[id].at;
-  const aa = !!UNITS[id].aa;
+  const u = UNITS[id];
+  const aa = !!u.aa;
+  const at2 = !!u.at && u.dmg >= 40;      // tier-2 AT (bigger, heavier)
   const { c, g } = mkCanvas(36, 36);
   const p = PAL[fac];
-  g.fillStyle = "rgba(0,0,0,.28)"; g.beginPath(); g.ellipse(18, 20, 13, 14, 0, 0, 7); g.fill();
-  g.fillStyle = p.metal; g.fillRect(4, 16, 28, 14);
-  g.fillStyle = shade(p.metal, -20); g.fillRect(4, 22, 28, 8);
-  // barrel
-  g.strokeStyle = "#2e2a24"; g.lineWidth = heavy ? 6 : 4; g.lineCap = "round";
-  g.beginPath(); g.moveTo(18, 16); g.lineTo(18, aa ? 8 : 4); g.stroke();
-  // turret box
-  g.fillStyle = p.armor; roundRect(g, 10, 6, 16, aa ? 6 : 8, 2); g.fill();
-  g.fillStyle = p.trim; g.beginPath(); g.arc(18, 10, 2.5, 0, 7); g.fill();
+  g.fillStyle = "rgba(0,0,0,.28)";
+  g.beginPath(); g.ellipse(18, 20, aa ? 12 : 13, aa ? 13 : 14, 0, 0, 7); g.fill();
+
+  if (aa) {
+    // --- AA / flak gun: pedestal + 4-barrel turret, aimed at the sky (up) ---
+    // pedestal
+    g.fillStyle = p.metal; g.fillRect(8, 18, 20, 12);
+    g.fillStyle = shade(p.metal, -20); g.fillRect(8, 25, 20, 5);
+    g.strokeStyle = "rgba(0,0,0,.35)"; g.lineWidth = 1;
+    g.strokeRect(8, 18, 20, 12);
+    // turntable
+    g.fillStyle = shade(p.metal, 8); g.beginPath(); g.arc(18, 16, 9, 0, 7); g.fill();
+    g.strokeStyle = p.armorD; g.lineWidth = 1.5; g.stroke();
+    // 4 flak barrels (2x2 cluster), angled slightly upward
+    g.strokeStyle = "#2e2a24"; g.lineWidth = 2.4; g.lineCap = "round";
+    for (const [ox, oy] of [[-3.5, -1.5], [3.5, -1.5], [-3.5, 3], [3.5, 3]]) {
+      g.beginPath(); g.moveTo(18 + ox, 15 + oy * 0.6); g.lineTo(18 + ox * 2.2, 1 + oy); g.stroke();
+    }
+    // muzzle brakes (small ticks at barrel tips)
+    g.strokeStyle = "rgba(0,0,0,.4)"; g.lineWidth = 1;
+    for (const [ox, oy] of [[-7.7, -1.5 + 1], [7.7, -1.5 + 1], [-7.7, 3 + 1], [7.7, 3 + 1]]) {
+      g.beginPath(); g.moveTo(18 + ox - 1.5, 1 + oy); g.lineTo(18 + ox + 1.5, 1 + oy); g.stroke();
+    }
+    // turret dome
+    g.fillStyle = p.armor;
+    g.beginPath(); g.arc(18, 16, 5, 0, 7); g.fill();
+    g.strokeStyle = p.armorD; g.lineWidth = 1; g.stroke();
+    g.fillStyle = p.trim; g.beginPath(); g.arc(18, 16, 1.8, 0, 7); g.fill();
+  } else {
+    // --- AT gun: shielded wheeled emplacement + long barrel ---
+    // shield wall (front = up)
+    const sw = at2 ? 14 : 11, sx = 18 - sw / 2;
+    g.fillStyle = p.armor;
+    g.beginPath();
+    g.moveTo(sx, 16); g.lineTo(sx + 3, 8); g.lineTo(sx + sw - 3, 8); g.lineTo(sx + sw, 16);
+    g.closePath(); g.fill();
+    g.strokeStyle = p.armorD; g.lineWidth = 1.5; g.stroke();
+    // shield ribs
+    g.strokeStyle = "rgba(0,0,0,.3)"; g.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      const t = i / 4;
+      g.beginPath();
+      g.moveTo(sx + t * sw, 16); g.lineTo(sx + 3 + t * (sw - 6), 8);
+      g.stroke();
+    }
+    // body (chassis under the shield)
+    g.fillStyle = p.metal; g.fillRect(7, 16, 22, 12);
+    g.fillStyle = shade(p.metal, -20); g.fillRect(7, 23, 22, 5);
+    // wheels
+    g.fillStyle = "#221f1c";
+    for (const wx of [10, 18, 26]) { g.beginPath(); g.arc(wx, 20, 3, 0, 7); g.fill(); }
+    g.fillStyle = "#4d463c";
+    for (const wx of [10, 18, 26]) { g.beginPath(); g.arc(wx, 20, 1.2, 0, 7); g.fill(); }
+    // long barrel (at2: longer + thicker)
+    const bl = at2 ? 13 : 11;
+    g.strokeStyle = "#2e2a24"; g.lineWidth = at2 ? 4 : 3; g.lineCap = "round";
+    g.beginPath(); g.moveTo(18, 12); g.lineTo(18, 12 - bl); g.stroke();
+    // muzzle brake
+    g.strokeStyle = at2 ? "#4d463c" : "#2e2a24"; g.lineWidth = at2 ? 6 : 4;
+    g.beginPath(); g.moveTo(18, 4 - (at2 ? 1 : 0)); g.lineTo(18, 1 - (at2 ? 1 : 0)); g.stroke();
+    // gun mark
+    g.fillStyle = p.trim; g.beginPath(); g.arc(18, 12, 1.8, 0, 7); g.fill();
+  }
   return c;
 }
 

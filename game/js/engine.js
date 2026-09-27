@@ -55,14 +55,24 @@ export class Game {
       };
     }
     this._sfx = null; this._onWin = null; this.onUiTick = null;
+    this.baseSpots = {};   // fac -> {fac, cx, cy} — filled by setupBases()
   }
   attach(o = {}) { this._sfx = o.sfx || null; this._onWin = o.onWin; }
-  setupBases() {
-    // China: NW corner (3,3). Japan: SE corner. Map gen clears 5x5 around each corner.
-    const spots = [
-      { fac: "china", cx: 3, cy: 3 },
-      { fac: "japan", cx: this.map.w - 4, cy: this.map.h - 4 },
+  setupBases(spots) {
+    // Spawn points are passed in (main.js computes them, offset from the map
+    // edge so bases are not glued to a corner). Falls back to the classic
+    // corners for tests that don't pass anything.
+    const w = this.map.w, h = this.map.h;
+    const base = spots || [
+      { fac: this.player, cx: 3, cy: 3 },
+      { fac: this.aiFac, cx: w - 4, cy: h - 4 },
     ];
+    const spotsFinal = base.map((s) => ({
+      fac: s.fac,
+      cx: Math.max(2, Math.min(w - 3, s.cx)),
+      cy: Math.max(2, Math.min(h - 3, s.cy)),
+    }));
+    for (const s of spotsFinal) this.baseSpots[s.fac] ||= s;
     const inb = (x, y) => x >= 0 && y >= 0 && x < this.map.w && y < this.map.h;
     const freeTile = (x, y) => inb(x, y) && this.map.buildable(x, y) && !this.buildingAt(x, y) && !this.occupied.has(x + "," + y);
     const scan = (cx, cy, kind, maxD) => {
@@ -78,7 +88,7 @@ export class Game {
           }
       return null;
     };
-    for (const s of spots) {
+    for (const s of spotsFinal) {
       const fac = s.fac, { cx, cy } = s;
       const place = (id, x, y) => {
         const b = this.startBuild(id, fac, x, y);
@@ -380,6 +390,9 @@ export class Game {
     this.log((isBuilding ? e.cfg.name : e.cfg.name) + " destroyed", "kill");
     this.winCheck();
     if (this.onUiTick) this.onUiTick("kill", e);
+    // Combat death of a building (demolish() skips this). Lets the AI know to
+    // pause rebuilding the same type instead of instantly re-queueing it.
+    if (isBuilding && this.onBuildingKilled) this.onBuildingKilled(e);
   }
   winCheck() {
     if (this.winner) return;

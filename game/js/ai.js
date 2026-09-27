@@ -18,6 +18,27 @@ export class AI {
     this.waveGap = this.diff.waveGap;
     this.researched = new Set();
     this.home = null;        // home depot building
+    // type -> game.time when one of MY buildings of that type was destroyed.
+    // Rebuilding the same type right after a kill is what made the AI "instantly
+    // build it back" — the player's attack was met with a replacement seconds
+    // later, in an endless loop. A per-difficulty pause after a kill breaks it.
+    this._diedAt = {};
+  }
+
+  // a building (not a player-demolition) was destroyed: mark its type as
+  // "recently killed" so economy() won't instantly re-queue a twin.
+  markBuildingKilled(id) {
+    if (!id) return;
+    this._diedAt[id] = this.g.time;
+  }
+  // should a NEW build of this type wait? production only — pure income (ore/fuel)
+  // and a just-queued building are NOT gated on kills.
+  _rebuildPaused(id) {
+    const t0 = this._diedAt[id];
+    if (!Number.isFinite(t0)) return false;
+    const delay = this.diff?.rebuildDelay;
+    if (!delay) return false;
+    return (this.g.time - t0) < delay;
   }
 
   tick(dt) {
@@ -182,7 +203,7 @@ export class AI {
     //    saving, so the *2 was pointless extra waiting).
     for (const [id, n] of AI.LADDER) {
       if (id === "ore" || id === "fuel") continue; // handled in step 1
-      if (pending(id) < n && tin >= BUILDINGS[id].cost.tin && this.placeNear(id, depot)) return true;
+      if (pending(id) < n && tin >= BUILDINGS[id].cost.tin && !this._rebuildPaused(id) && this.placeNear(id, depot)) return true;
     }
     // 5. lab
     if (count("lab") === 0 && tin > 700 && this.placeNear("lab", depot)) return true;

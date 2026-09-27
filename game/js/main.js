@@ -39,10 +39,21 @@ function applySettings(s) {
 function playGame(cfg) {
   // Menu sends {player, aiFac, res, diff, map:{w,h,seed}} — normalize defensively.
   const m = cfg.map && typeof cfg.map === "object" ? cfg.map : cfg;
-  const map = generateMap({ w: m.w, h: m.h, seed: m.seed });
+  // Spawn points offset ~4 tiles from the map edge so neither side starts
+  // glued to a corner — gives the AI room to grow inward and makes the map
+  // feel less like a box-puncher. Map gen receives the same points so it
+  // clears terrain / seeds resources around the ACTUAL spawn, not the corner.
+  const w = m.w, h = m.h;
+  const OFF = 6;
+  const spots = [
+    { fac: cfg.player, cx: OFF, cy: OFF },
+    { fac: cfg.player === "china" ? "japan" : "china", cx: w - OFF - 1, cy: h - OFF - 1 },
+  ];
+  const corners = spots.map((s) => ({ x: s.cx, y: s.cy, tag: "" }));
+  const mapFinal = generateMap({ w, h, seed: m.seed, corners });
   const resTier = RES_TIERS[cfg.res] || null;
-  game = new Game(map, { player: cfg.player, diff: cfg.diff, res: cfg.res, resTier });
-  game.setupBases();
+  game = new Game(mapFinal, { player: cfg.player, diff: cfg.diff, res: cfg.res, resTier });
+  game.setupBases(spots);
   document.getElementById("menu").classList.add("hidden");
   const gameEl = document.getElementById("game");
   gameEl.classList.remove("hidden");
@@ -62,6 +73,10 @@ function playGame(cfg) {
   ui.root.focus();
   game.onUiTick = (dt) => ui.uiTick(dt);
   ai = new AI(game, game.aiFac);
+  // When a building dies in combat, tell the AI to pause rebuilding its type.
+  game.onBuildingKilled = (b) => {
+    if (ai && b.fac === game.aiFac) ai.markBuildingKilled(b.cfg?.id);
+  };
 
   renderer.cam.x = (game.bases?.[cfg.player]?.x ?? 3 * TILE) - canvas.clientWidth / 2 / renderer.cam.zoom;
   renderer.cam.y = (game.bases?.[cfg.player]?.y ?? 3 * TILE) - canvas.clientHeight / 2 / renderer.cam.zoom;

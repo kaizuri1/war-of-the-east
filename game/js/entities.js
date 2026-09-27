@@ -32,6 +32,7 @@ export class Unit extends Entity {
     this.moving = 0;                   // 0..1 speed factor this frame
     this.spawnTimer = 0.4;             // grace after emerging from factory
     this.pathFail = 0;                 // repaths in a row that found NO route
+    this._follow = false;              // following a NON-attack-walk order: suppresses auto-acquire
     this.homing = 0;                   // air: auto-mission toward enemy front
     this.life = 0;                     // air: total flight time (sec)
     this.parked = false;               // air: sitting at its airfield, no order
@@ -206,13 +207,12 @@ export class Unit extends Entity {
       }
     }
     const vrange = this.rangePx() * 1.5;
-    // acquire: any targetable enemy (unit OR building) within range, whether
-    // this unit is idle, walking to a point, or attacking — i.e. auto-attack
-    // (hold-fire off). Previously a unit only fired when fully stationary (or
-    // after 6s idle at a finished order), and the idle scan iterated only
-    // game.units, so an enemy building in range was never auto-engaged and a
-    // unit following a move path ignored enemies in its path entirely.
-    if (!this.target && !this.parked) {
+    // auto-acquire: ANY targetable enemy (unit OR building) in range — while
+    // the unit is idle, or mid-attack-move. Exception: a unit FOLLOWING a plain
+    // (non-attack) walk order holds its course without re-locking, so an
+    // explicit player order is never overridden by an auto target (units
+    // "stuck on attacking" / re-engaging a building that just rebuilt).
+    if (!this.target && !this.parked && !this._follow) {
       const range = this.attackMove ? this.rangePx() : vrange;
       const t = game.nearestEnemy(this, range, game);
       if (t) { this.target = t; this.attackMove = false; }
@@ -283,6 +283,7 @@ export class Unit extends Entity {
             this.attackMove = false;
             this.pathFail = 0;
             this.repath = 0;
+            this._follow = false;   // order dropped — resume auto-acquire
           } else {
             this.path = null;
           }
@@ -300,6 +301,7 @@ export class Unit extends Entity {
           this.x = next.x; this.y = next.y; this.path.shift();
           if (!this.path.length) {
             this.fx = null; this.fy = null; this.moveOrder = null;
+            this._follow = false;
             // inbound for home: snap to the airfield and park
             if (this.isAir() && this.returning) {
               if (this.park && Math.hypot(this.park.x - this.x, this.park.y - this.y) > TILE * 2) {
