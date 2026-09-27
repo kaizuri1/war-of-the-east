@@ -4,6 +4,7 @@
 import { TILE, FACTION_META, BUILDINGS } from "./config.js";
 import { T } from "./rand.js";
 import { SPRITES, TILES, unitSpriteKey, bSpriteKey } from "./sprites.js";
+import { UNITS } from "./config.js";
 
 export class Renderer {
   constructor(canvas) {
@@ -86,6 +87,20 @@ export class Renderer {
     const ex = b.tx * TILE, ey = b.ty * TILE;
     if (img) g.drawImage(img, ex, ey, W, H);
     else { g.fillStyle = FACTION_META[b.fac].color; g.fillRect(ex + 2, ey + 2, W - 4, H - 4); }
+    // weapon turret: small rotating platform facing the tracked target
+    if (b.cfg.weapon) {
+      const tx = b.x, ty = b.y - Math.min(H, W) * 0.18;
+      g.save();
+      g.translate(tx, ty);
+      g.rotate(b.turretAng || 0);
+      g.fillStyle = "rgba(0,0,0,0.3)";
+      g.beginPath(); g.ellipse(0, 1, 7, 5, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(35,30,24,0.9)";
+      g.beginPath(); g.arc(0, 0, 5.5, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#221e18"; g.lineWidth = 3; g.lineCap = "round";
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(9, 0); g.stroke();
+      g.restore();
+    }
     // under-construction overlay + progress
     if (b.underConstruction()) {
       g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(ex, ey, W, H);
@@ -97,12 +112,29 @@ export class Renderer {
     if (b.underpowered && Math.floor(game.time * 2) % 2 === 0) {
       g.fillStyle = "rgba(255,80,40,0.25)"; g.fillRect(ex, ey, W, H);
     }
-    // production bar
+    // production bar + ghost of the queued unit at the exit spot
     if (b.queue.length) {
       const cur = b.queue[0];
-      const pct = Math.min(1, b.queueTimer / ((cur._cfg && cur._cfg.time) || 1));
+      const curCfg = cur._cfg || UNITS[cur.id] || {};
+      const pct = Math.min(1, b.queueTimer / (curCfg.time || 1));
       g.fillStyle = "#222"; g.fillRect(ex, ey - 7, W, 5);
       g.fillStyle = "#8fd463"; g.fillRect(ex + 1, ey - 6, (W - 2) * pct, 3);
+      // ghost preview so "what is being built" is visible, not just a bar
+      const c = UNITS[cur.id] || curCfg;
+      if (c && c.class) {
+        const uimg = SPRITES[unitSpriteKey(c)];
+        if (uimg) {
+          const gi = Math.max(0, Math.min(b.queue.length - 1, b.queue.indexOf(cur)));
+          const gx = b.x + ((gi % 3) - 1) * 18;
+          const gy = b.y + (b.h * TILE) / 2 + 8;
+          const pulse = 0.55 + 0.25 * Math.sin(game.time * 6);
+          g.save(); g.globalAlpha = Math.max(0, Math.min(1, pulse)) * 0.9;
+          g.fillStyle = "rgba(0,0,0,0.25)";
+          g.beginPath(); g.ellipse(gx, gy + 2, 8, 3, 0, 0, Math.PI * 2); g.fill();
+          g.drawImage(uimg, gx - 10, gy - 14, 20, 16);
+          g.restore(); g.globalAlpha = 1;
+        }
+      }
     }
     // capture bar
     if (b.capByFac && b.capByFac !== b.fac && b.capHp < b.maxHp) {
@@ -133,20 +165,31 @@ export class Renderer {
     const g = this.g;
     const img = SPRITES[unitSpriteKey(u.cfg)];
     let fp = u.footprint() * 2;
-    if (u.isAir() && !u.parked) fp += 8;  // in-flight planes are drawn bigger
+    if (u.isAir() && !u.parked) fp += 8;   // in-flight planes are drawn bigger
+    if (u.isAir() && u.parked) fp += 16;   // parked: draw the full plane, not a stub
+    // spawn blink: alpha must be set BEFORE drawing, and drawn once below
+    const spawnBlink = u.spawnTimer > 0 ? 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(game.time * 20)) : 1;
     if (img) {
       // face movement direction
       g.save();
+      g.globalAlpha = spawnBlink;
       g.translate(u.x, u.y);
-      const ang = u.moving || (u.moveOrder && !u.parked) || u.target
-        ? Math.atan2((u.target ? u.target.y : u.moveOrder ? u.moveOrder.y : u.y) - u.y, (u.target ? u.target.x : u.moveOrder ? u.moveOrder.x : u.x + 1) - u.x)
+      const t = u.target && !u.target.dead ? u.target : null;
+      const mo = u.moveOrder && !u.parked ? u.moveOrder : null;
+      let ang = t || mo
+        ? Math.atan2((t ? t.y : mo.y) - u.y, (t ? t.x : mo.x) - u.x)
         : (u._dir || 0);
       if (u.isAir()) ang += Math.PI;
       g.rotate(ang);
+      // parked planes get a ground shadow so they read as sitting on the field
+      if (u.isAir() && u.parked) {
+        g.fillStyle = "rgba(0,0,0,0.25)";
+        g.beginPath(); g.ellipse(2, 4, fp * 0.42, fp * 0.16, 0, 0, Math.PI * 2); g.fill();
+      }
       g.drawImage(img, -fp / 2 - 2, -fp / 2 - 2, fp + 4, fp + 4);
       g.restore();
+      g.globalAlpha = 1;
     }
-    if (u.spawnTimer > 0) { g.globalAlpha = 0.5 + 0.5 * Math.sin(game.time * 20); }
     // hp bar
     if (u.hp < u.maxHp || u.selected) {
       g.fillStyle = "#111"; g.fillRect(u.x - 10, u.y - fp / 2 - 6, 20, 3);

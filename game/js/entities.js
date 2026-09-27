@@ -8,7 +8,7 @@ const uid = () => _id++;
 
 export class Entity {
   constructor(fac) { this.fac = fac; this.id = uid(); this.hp = 0; this.selected = false; }
-  isAlive() { return this.hp > 0; }
+  isAlive() { return this.hp > 0 && !this.dead; }
   center() { return { x: this.x, y: this.y }; }
 }
 
@@ -443,6 +443,7 @@ export class Building extends Entity {
     this.capByFac = null;
     this.dead = false;
     this.selected = false;
+    this.turretAng = 0;              // facing angle of weapon turrets (radians)
     this.buildT = 0;                 // construction progress (sec)
     this.built = 0;                  // done when buildT >= built
     this.w = cfg.w || 1; this.h = cfg.h || 1;
@@ -487,6 +488,15 @@ export class Building extends Entity {
       if (!this.target || !this.target.isAlive()) {
         const t = game.nearestEnemy(this, cfgRange(this), game);
         if (t) this.target = t; else this.target = null;
+      }
+      // turret tracking: rotate smoothly toward the target (or idle drift)
+      if (this.target && !this.target.dead) {
+        const want = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+        let da = want - this.turretAng;
+        while (da > Math.PI) da -= 2 * Math.PI;
+        while (da < -Math.PI) da += 2 * Math.PI;
+        const maxTurn = 3.5 * dt;
+        this.turretAng += Math.abs(da) <= maxTurn ? da : (da > 0 ? maxTurn : -maxTurn);
       }
       if (this.target && !this.target.dead) {
         // stale target far away: drop it (previously could lock onto a

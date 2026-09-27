@@ -74,34 +74,75 @@ function gInfantry(id, fac) {
   return c;
 }
 
-// ---- tank: hull + turret + barrel, size by tier ----
+// ---- tank: hull + turret + barrel, silhouette per tank id (light/medium/heavy) ----
 function gTank(id, fac) {
   const t = UNITS[id];
   const rare = t.rare, tier = t.tier;
-  const size = tier >= 3 ? 44 : tier === 2 ? 40 : 36;
+  const size = tier >= 3 ? 46 : tier === 2 ? 42 : 36;
+  // per-id silhouette: hull ratio, turret shape, barrel length/width
+  const S = {
+    // china
+    c_vt43:  { h: 0.58, r: 0.11, bl: 0.36, bw: 0.05 },          // light, stubby
+    c_t34:   { h: 0.62, r: 0.13, bl: 0.46, bw: 0.06, slope: true },
+    c_m3lee: { h: 0.68, r: 0.12, bl: 0.50, bw: 0.05, box: true }, // fixed box turret
+    c_sherm: { h: 0.68, r: 0.14, bl: 0.54, bw: 0.06 },
+    c_t28:   { h: 0.76, r: 0.17, bl: 0.58, bw: 0.09, twin: true },
+    // japan
+    j_hago:  { h: 0.54, r: 0.10, bl: 0.30, bw: 0.05 },          // open-topped light
+    j_shin:  { h: 0.62, r: 0.13, bl: 0.42, bw: 0.06 },
+    j_chiha: { h: 0.68, r: 0.13, bl: 0.52, bw: 0.06 },
+    j_chihe: { h: 0.70, r: 0.14, bl: 0.55, bw: 0.07 },
+    j_hv100: { h: 0.78, r: 0.17, bl: 0.56, bw: 0.08 },
+    j_205:   { h: 0.84, r: 0.18, bl: 0.62, bw: 0.10, twin: true },
+  }[id] || { h: 0.66, r: 0.13, bl: 0.48, bw: 0.06 };
   const { c, g } = mkCanvas(size, size);
   const p = PAL[fac];
   const cx = size / 2, cy = size / 2;
-  g.fillStyle = "rgba(0,0,0,.3)"; g.beginPath(); g.ellipse(cx, cy + 3, size * 0.42, size * 0.46, 0, 0, 7); g.fill();
+  const hw = size * (0.30 + S.h * 0.14), hh = size * (S.h / 2); // hull dims from silhouette size
+  g.fillStyle = "rgba(0,0,0,.3)"; g.beginPath(); g.ellipse(cx, cy + 3, hw, size * 0.46, 0, 0, 7); g.fill();
   // tracks
   g.fillStyle = p.armorD;
   const tw = size * 0.16;
-  g.fillRect(cx - size * 0.42, cy - size * 0.36, tw, size * 0.72);
-  g.fillRect(cx + size * 0.42 - tw, cy - size * 0.36, tw, size * 0.72);
-  // hull
+  g.fillRect(cx - hw, cy - size * 0.36, tw, size * 0.72);
+  g.fillRect(cx + hw - tw, cy - size * 0.36, tw, size * 0.72);
+  // track slats
+  g.strokeStyle = "rgba(0,0,0,.35)"; g.lineWidth = 1;
+  for (let i = 1; i < 6; i++) {
+    const y = cy - size * 0.36 + i * (size * 0.72 / 6);
+    g.beginPath(); g.moveTo(cx - hw, y); g.lineTo(cx - hw + tw, y); g.stroke();
+    g.beginPath(); g.moveTo(cx + hw - tw, y); g.lineTo(cx + hw, y); g.stroke();
+  }
+  // hull (length = S.h)
   g.fillStyle = p.armor;
-  roundRect(g, cx - size * 0.36, cy - size * 0.3, size * 0.72, size * 0.58, 4); g.fill();
+  roundRect(g, cx - hw * 0.92, cy - hh, hw * 1.84, hh * 2, 4); g.fill();
   g.strokeStyle = p.armorD; g.lineWidth = 2; g.stroke();
-  // turret
+  if (S.slope) { // sloped plate hint
+    g.strokeStyle = "rgba(255,255,255,.18)"; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx - hw * 0.75, cy - hh + 4); g.lineTo(cx - hw * 0.4, cy - hh + 4); g.stroke();
+  }
+  // turret: box (M3 Lee fixed mount) or round
   g.fillStyle = shade(p.armor, -14);
-  const tr = size * (rare ? 0.16 : 0.13);
-  g.beginPath(); g.arc(cx, cy - 2, tr, 0, 7); g.fill();
-  // barrel
-  g.strokeStyle = p.armorD; g.lineWidth = size * 0.07; g.lineCap = "round";
-  g.beginPath(); g.moveTo(cx, cy - 2); g.lineTo(cx, cy - size * 0.48); g.stroke();
+  const tr = size * S.r;
+  const ty = cy - hh * 0.1;
+  if (S.box) {
+    roundRect(g, cx - tr * 0.8, ty - tr * 0.7, tr * 1.6, tr * 1.4, 2); g.fill();
+    g.strokeStyle = p.armorD; g.lineWidth = 1.5; g.stroke();
+  } else {
+    g.beginPath(); g.arc(cx, ty, tr, 0, 7); g.fill();
+  }
+  // barrel (front = up on the canvas)
+  g.strokeStyle = p.armorD; g.lineWidth = size * S.bw; g.lineCap = "round";
+  if (S.twin) { // twin barrels (heavies)
+    g.beginPath(); g.moveTo(cx - 3, ty); g.lineTo(cx - 3, ty - size * S.bl); g.stroke();
+    g.beginPath(); g.moveTo(cx + 3, ty); g.lineTo(cx + 3, ty - size * S.bl); g.stroke();
+  } else {
+    g.beginPath(); g.moveTo(cx, ty); g.lineTo(cx, ty - size * S.bl); g.stroke();
+  }
+  // gun mantlet
+  if (!S.box) { g.fillStyle = p.armorD; g.beginPath(); g.arc(cx, ty, tr * 0.4, 0, 7); g.fill(); }
   // faction marking
-  g.fillStyle = p.trim; g.beginPath(); g.arc(cx, cy - 2, tr * 0.45, 0, 7); g.fill();
-  if (rare) { g.strokeStyle = "#ffd54a"; g.lineWidth = 2; roundRect(g, cx - size * 0.36, cy - size * 0.3, size * 0.72, size * 0.58, 4); g.stroke(); }
+  g.fillStyle = p.trim; g.beginPath(); g.arc(cx, ty, tr * 0.45, 0, 7); g.fill();
+  if (rare) { g.strokeStyle = "#ffd54a"; g.lineWidth = 2; roundRect(g, cx - hw * 0.92, cy - hh, hw * 1.84, hh * 2, 4); g.stroke(); }
   return c;
 }
 
