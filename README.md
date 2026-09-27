@@ -21,9 +21,15 @@ Just open the game in any modern browser (desktop, Chrome/Edge/Firefox):
 
 | Key / Mouse | Action |
 |---|---|
-| **W/S or ↑/↓** | Pan camera (screen edges also pan) |
+| **W/A/S/D or arrow keys** | Pan camera (screen edges also pan) |
 | **Left click** | Select / build / issue orders |
-| **Right click / Esc** | Cancel build ghost |
+| **Right click** | Build / issue orders |
+| **Esc** | Cancel build ghost, or pause when idle |
+| **H** | Hide / show the command bar |
+| **F1 / F2 / F3** | Game speed 1× / 2× / 3× |
+| **F10 / F12 or Space** | Pause |
+| **U** | Repair selected building |
+| **Enter** | Restart after a match ends |
 | **Build menu** | Right-side panel with tabs: Infantry, Vehicles, Research, Building Production |
 | **Sell / Repair** | Buttons appear when a building is selected |
 
