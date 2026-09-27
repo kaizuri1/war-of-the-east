@@ -1,6 +1,7 @@
 # local test scripts
 _*.mjs
 _*.py
+probe_*.mjs
 
 # OS junk
 .DS_Store
@@ -10,3 +11,5 @@ Thumbs.db
 *.before-*
 *_probe.html
 *_files_meta.txt
+prob_*.png
+*.out
