@@ -1,0 +1,4 @@
+STRESS: no per-entity exceptions over 300s PASS
+STRESS: AI economy progressed (japan buildings: 26) PASS
+STRESS: AI army produced (120 japan units alive) PASS
+RESULT: ALL PASS
