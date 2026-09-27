@@ -282,8 +282,8 @@ export class AI {
         Math.hypot(u.x - home.x, u.y - home.y) < TILE * 10);
     const mid = { x: home.x + dirX * 0.55, y: home.y + dirY * 0.55 };
     const myUnits = g.units.filter((u) =>
-      u.fac === f && !u.dead && u.isAlive() && !u.isStatic() &&
-      u.cfg?.targets?.includes("inf") !== false && !u.cfg?.engineer);
+      u.fac === f && !u.dead && u.isAlive() && !u.isStatic() && u.class() !== "gun" &&
+      u.cfg?.targets?.includes("inf") !== false && !u.cfg?.engineer); // guns stay as defense
     for (const u of myUnits) {
       const dHome = Math.hypot(u.x - home.x, u.y - home.y);
       // garrison: only if the enemy is genuinely close, AND the unit is

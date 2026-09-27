@@ -444,7 +444,7 @@ export function makeUnit(cfgId, fac, x, y, game) {
 export function makeBuilding(cfgId, fac, tx, ty) {
   return new Building(BUILDINGS[cfgId], fac, tx, ty);
 }
-// static gun built by arsenal becomes a "unit" with speed 0 (simpler lifecycle)
+// gun built by arsenal becomes a "unit" (slow towed gun — repositionable)
 export function makeGunUnit(cfgId, fac, tx, ty, game) {
   const u = makeUnit(cfgId, fac, tx * TILE + TILE / 2, ty * TILE + TILE / 2, game);
   u.fx = null; u.fy = null;

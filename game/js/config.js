@@ -115,10 +115,10 @@ export const UNITS = {
   c_m3lee: { fac: C, class: "tank", name: "M3 Lee (Lend-Lease)", jp: "M3リー中戦車", cost: { tin: 700, steel: 130 }, hp: 340, dmg: 30, rof: 1.4, range: 6.5, speed: 62, fuel: 130, targets: ["inf","veh"], aa: 1.0, tier: 2 },
   c_sherm: { fac: C, class: "tank", name: "M4 Sherman (Lend-Lease)", jp: "M4シャーマン", cost: { tin: 900, steel: 180 }, hp: 420, dmg: 44, rof: 1.5, range: 7,  speed: 60, fuel: 150, targets: ["inf","veh"], aa: 1.0, tier: 2 },
   c_t28:   { fac: C, class: "tank", name: "T-28 Heavy (Soviet)", jp: "T-28重戦車", cost: { tin: 1250, steel: 280 }, hp: 560, dmg: 62, rof: 2.0, range: 7, speed: 45, fuel: 170, targets: ["inf","veh"], tier: 3, rare: true },
-  // CHINA guns (built by arsenal, static)
-  c_at1:   { fac: C, class: "gun", name: "37mm AT Gun", jp: "37mm対戦車砲", cost: { tin: 300, steel: 40 }, hp: 120, dmg: 26, rof: 1.2, range: 7, speed: 0, targets: ["veh"], at: true, tier: 1, w: 1, h: 1 },
-  c_at2:   { fac: C, class: "gun", name: "57mm AT Gun (M2 cal.)", jp: "57mm対戦車砲", cost: { tin: 550, steel: 100 }, hp: 150, dmg: 52, rof: 2.0, range: 8, speed: 0, targets: ["veh"], at: true, tier: 2, w: 1, h: 1 },
-  c_aa:    { fac: C, class: "gun", name: "20mm AA (M2 cal.)", jp: "20mm高射砲", cost: { tin: 350, steel: 50 }, hp: 130, dmg: 18, rof: 0.5, range: 8, speed: 0, targets: ["air"], aa: 1.0, tier: 1, w: 1, h: 1 },
+  // CHINA guns (built by arsenal, slow towed guns — repositionable)
+  c_at1:   { fac: C, class: "gun", name: "37mm AT Gun", jp: "37mm対戦車砲", cost: { tin: 300, steel: 40 }, hp: 120, dmg: 26, rof: 1.2, range: 7, speed: 26, targets: ["veh"], at: true, tier: 1, w: 1, h: 1 },
+  c_at2:   { fac: C, class: "gun", name: "57mm AT Gun (M2 cal.)", jp: "57mm対戦車砲", cost: { tin: 550, steel: 100 }, hp: 150, dmg: 52, rof: 2.0, range: 8, speed: 26, targets: ["veh"], at: true, tier: 2, w: 1, h: 1 },
+  c_aa:    { fac: C, class: "gun", name: "20mm AA (M2 cal.)", jp: "20mm高射砲", cost: { tin: 350, steel: 50 }, hp: 130, dmg: 18, rof: 0.5, range: 8, speed: 26, targets: ["air"], aa: 1.0, tier: 1, w: 1, h: 1 },
   // ===== CHINA air =====
   c_i16:   { fac: C, class: "air", name: "I-16 'Fighting Yak'", jp: "I-16", cost: { tin: 450 }, hp: 120, dmg: 16, rof: 1.0, range: 5, speed: 90, targets: ["inf","veh","air"], tier: 1 },
   c_p40:   { fac: C, class: "air", name: "P-40 Tomahawk (Tigers)", jp: "P-40 トマホーク", cost: { tin: 650 }, hp: 160, dmg: 26, rof: 1.1, range: 5, speed: 95, targets: ["inf","veh","air"], tier: 2 },
@@ -137,10 +137,10 @@ export const UNITS = {
   j_chihe: { fac: J, class: "tank", name: "Type 1 Chi-He", jp: "一号中戦車", cost: { tin: 880, steel: 170 }, hp: 400, dmg: 42, rof: 1.4, range: 7, speed: 56, fuel: 140, targets: ["inf","veh"], aa: 1.0, tier: 2 },
   j_hv100: { fac: J, class: "tank", name: "Type 100 (93) Heavy", jp: "九三式重戦車", cost: { tin: 1250, steel: 280 }, hp: 560, dmg: 60, rof: 2.0, range: 7, speed: 44, fuel: 170, targets: ["inf","veh"], tier: 3, rare: true },
   j_205:   { fac: J, class: "tank", name: "Type 205 'Super Heavy'", jp: "二号百式超重戦車", cost: { tin: 1800, steel: 450 }, hp: 900, dmg: 85, rof: 2.4, range: 7.5, speed: 30, fuel: 220, targets: ["inf","veh"], tier: 3, rare: true },
-  // JAPAN guns
-  j_at1:   { fac: J, class: "gun", name: "37mm AT Gun", jp: "一式37mm対戦車砲", cost: { tin: 300, steel: 40 }, hp: 120, dmg: 26, rof: 1.2, range: 7, speed: 0, targets: ["veh"], at: true, tier: 1, w: 1, h: 1 },
-  j_at2:   { fac: J, class: "gun", name: "75mm AT Gun (Type 1)", jp: "一式75mm対戦車砲", cost: { tin: 550, steel: 100 }, hp: 150, dmg: 52, rof: 2.0, range: 8, speed: 0, targets: ["veh"], at: true, tier: 2, w: 1, h: 1 },
-  j_aa:    { fac: J, class: "gun", name: "20mm AA (Type 98)", jp: "九八式20mm高射砲", cost: { tin: 350, steel: 50 }, hp: 130, dmg: 18, rof: 0.5, range: 8, speed: 0, targets: ["air"], aa: 1.0, tier: 1, w: 1, h: 1 },
+  // JAPAN guns (slow towed guns — repositionable)
+  j_at1:   { fac: J, class: "gun", name: "37mm AT Gun", jp: "一式37mm対戦車砲", cost: { tin: 300, steel: 40 }, hp: 120, dmg: 26, rof: 1.2, range: 7, speed: 26, targets: ["veh"], at: true, tier: 1, w: 1, h: 1 },
+  j_at2:   { fac: J, class: "gun", name: "75mm AT Gun (Type 1)", jp: "一式75mm対戦車砲", cost: { tin: 550, steel: 100 }, hp: 150, dmg: 52, rof: 2.0, range: 8, speed: 26, targets: ["veh"], at: true, tier: 2, w: 1, h: 1 },
+  j_aa:    { fac: J, class: "gun", name: "20mm AA (Type 98)", jp: "九八式20mm高射砲", cost: { tin: 350, steel: 50 }, hp: 130, dmg: 18, rof: 0.5, range: 8, speed: 26, targets: ["air"], aa: 1.0, tier: 1, w: 1, h: 1 },
   // ===== JAPAN air =====
   j_ki27:  { fac: J, class: "air", name: "Ki-27 'Nate'", jp: "キ27", cost: { tin: 430 }, hp: 110, dmg: 15, rof: 1.0, range: 5, speed: 92, targets: ["inf","veh","air"], tier: 1 },
   j_zero:  { fac: J, class: "air", name: "Mitsubishi A6M 'Zero'", jp: "零式艦上戦闘機", cost: { tin: 680 }, hp: 150, dmg: 24, rof: 1.0, range: 5, speed: 105, targets: ["inf","veh","air"], tier: 2 },

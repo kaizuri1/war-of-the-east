@@ -94,7 +94,9 @@ Ki-43 Hayabusa, Ki-84 Hayate (1944 advanced), Ki-61 Hiyori (rare heavy fighter).
 
 **Buildable guns (via Arsenal):** 37 mm AT gun (both sides, different variants),
 advanced 57 mm AT gun (China M2 caliber / Japan Type 1), 75 mm AA twin / 20mm flak
-AA guns. Static, strong vs their target class.
+AA guns. Slow towed guns (speed 26, repositionable — not self-propelled),
+strong vs their target class. The AI holds them in place as defensive
+emplacements and does not attack-march them with the ground wave.
 
 ## 6. Tech Tree / Upgrades (lab, 3 tiers per side)
 
