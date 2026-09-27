@@ -31,6 +31,7 @@ export class Unit extends Entity {
     this.anim = Math.random() * 6.28;
     this.moving = 0;                   // 0..1 speed factor this frame
     this.spawnTimer = 0.4;             // grace after emerging from factory
+    this.pathFail = 0;                 // repaths in a row that found NO route
     this.homing = 0;                   // air: auto-mission toward enemy front
     this.life = 0;                     // air: total flight time (sec)
     this.applyUpgrades();
@@ -221,10 +222,25 @@ export class Unit extends Entity {
         this.repath = 0.6;
         if (this.fx2 === null) {
           // path temporarily blocked (unit in the way / building appearing):
-          // keep the order and retry on the next repath — never give up early
-          this.path = null;
+          // keep the order and retry on the next repath — never give up early.
+          // But after ~6s of consecutive "no route" the target is genuinely
+          // unreachable (buildings boxed the pocket the unit is stuck in):
+          // drop the order so the AI can pick a REACHABLE point instead of
+          // re-trying the same dead target forever ("units can't move").
+          this.pathFail++;
+          if (this.pathFail >= 10) {
+            this.fx = null; this.fy = null;
+            this.moveOrder = null;
+            this.attackMove = false;
+            this.pathFail = 0;
+            this.repath = 0;
+          } else {
+            this.path = null;
+          }
+        } else {
+          this.pathFail = 0;
+          this.path = this.fx2;
         }
-        else this.path = this.fx2;
       }
       if (this.path && this.path.length) {
         const next = this.path[0];

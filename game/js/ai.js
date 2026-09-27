@@ -56,15 +56,72 @@ export class AI {
   }
 
   // ---------- economy ----------
+  // Connectivity guard: ground units emerge from the depot's SOUTH edge tile
+  // (b.y + h*TILE/2 + 8). findPath() walks on 8 dirs with corner-cut and treats
+  // EVERY occupied tile (the map.occupied Set = solid terrain + every building)
+  // as a wall, so the ONLY 1-wide gap out of the spawn pocket is passable if —
+  // and only if — that tile stays free. If economy (ore/fuel) builds on a tile
+  // in the pocket's cut-set, every new unit finds no path out and the whole
+  // army stacks at the door ("locked in the corner, units can't move").
+  // We reject a spot iff blocking it DISCONNECTS the spawn pocket from the
+  // open field — i.e. the reachable area after blocking is smaller than
+  // "natural minus the tile itself" (a redundant interior/open tile only
+  // costs its own cell; an exit costs the whole outside).
+  sealedCheck(tx, ty) {
+    const g = this.g, m = g.map, w = m.w, h = m.h;
+    const home = this.home;
+    const cx = home.tx + (home.w >> 1);
+    const sy = home.ty + home.h;                       // tile just south of depot
+    const sx = Math.max(0, Math.min(w - 1, cx));
+    if (sy < 0 || sy >= h) return true;               // depot flush to map edge: leave it
+    if (m.solid(sx, sy) || (g.occupied?.has(sx + "," + sy))) return true; // spawn already walled: degenerate
+    if (Math.abs(tx - sx) > 3 || Math.abs(ty - sy) > 3) return true;      // far — can't seal the pocket
+    const wall = (x, y) => (m.solid(x, y) || (g.occupied?.has(x + "," + y)));
+    const area = (extraBlocked, markTo) => {
+      const visited = new Uint8Array(w * h);
+      visited[sy * w + sx] = 1;
+      const qx = [sx], qy = [sy]; let n = 0;
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+      for (let head = 0; head < qx.length; head++) {
+        const x = qx[head], y = qy[head]; n++;
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const k = ny * w + nx;
+          if (visited[k]) continue;
+          if (wall(nx, ny)) continue;
+          if (extraBlocked && nx === tx && ny === ty) continue;
+          if (dx && dy && (wall(x + dx, y) || wall(x, y + dy))) continue; // no corner cut (mirror of findPath)
+          visited[k] = 1; qx.push(nx); qy.push(ny);
+        }
+      }
+      if (markTo) markTo.set(visited);
+      return n;
+    };
+    const openReach = new Uint8Array(w * h);
+    const natural = area(false, openReach);
+    if (!natural || natural === 1) return true;       // spawn isolated: let the build happen
+    if (!openReach[ty * w + tx]) return true;         // tile unreachable from spawn: blocking it changes nothing
+    const shrunk = area(true, null);
+    // Losing more than the tile's own cell → the exit was cut off → reject.
+    return shrunk > natural - 2;
+  }
   placeNear(id, anchor, maxRange = 6) {
     const g = this.g, cfg = BUILDINGS[id];
     if (!cfg || !g.canAfford(this.fac, cfg.cost)) return false;
     const cx = anchor.tx + (anchor.w >> 1), cy = anchor.ty + (anchor.h >> 1);
+    const anchorNearSpawn = this.home &&
+      Math.abs(cx - (this.home.tx + (this.home.w >> 1))) <= 4 &&
+      Math.abs(cy - (this.home.ty + (this.home.h >> 1))) <= 4;
+    // Any build near the home spawn can close the pocket a ground unit emerges
+    // from — the BFS below mirrors findPath's pass rules (occupied walls +
+    // corner-cut), so it's exact for every building id, not just ore/fuel.
+    const guard = anchorNearSpawn ? (x, y) => this.sealedCheck(x, y) : () => true;
     for (let range = 1; range <= maxRange; range++)
       for (let dy = -range; dy <= range; dy++)
         for (let dx = -range; dx <= range; dx++) {
           const x = cx + dx, y = cy + dy;
-          if (g.canBuild(id, this.fac, x, y) && g.startBuild(id, this.fac, x, y)) return true;
+          if (guard(x, y) && g.canBuild(id, this.fac, x, y) && g.startBuild(id, this.fac, x, y)) return true;
         }
     return false;
   }
