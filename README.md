@@ -29,6 +29,7 @@ Just open the game in any modern browser (desktop, Chrome/Edge/Firefox):
 | **F1 / F2 / F3** | Game speed 1× / 2× / 3× |
 | **F10 / F12 or Space** | Pause |
 | **U** | Repair selected building |
+| **Ctrl+1–5** | Assign / select control groups (Shift+ to assign) |
 | **Enter** | Restart after a match ends |
 | **Build menu** | Right-side panel with tabs: Infantry, Vehicles, Research, Building Production |
 | **Sell / Repair** | Buttons appear when a building is selected |
