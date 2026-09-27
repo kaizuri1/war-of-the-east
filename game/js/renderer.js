@@ -59,7 +59,7 @@ export class Renderer {
     // buildings
     for (const b of game.buildings) if (!b.dead) this.drawBuilding(game, b);
     // units
-    for (const u of game.units) if (!u.dead) this.drawUnit(game, u);
+    for (const u of game.units) if (!u.dead) { this.drawTrail(u); this.drawUnit(game, u); }
     // projectiles on top
     for (const p of game.projectiles) this.drawProjectile(p);
     // rubber-band selection box (screen space)
@@ -116,15 +116,31 @@ export class Renderer {
       g.fillStyle = hpCol(b.hp / b.maxHp); g.fillRect(ex + 3, ey + H - 5, (W - 6) * (b.hp / b.maxHp), 3);
     }
   }
+  // fading flight trail behind in-flight planes (visibility: a plane 2 tiles
+  // away reads as a streak, not a 9px sprite)
+  drawTrail(u) {
+    if (!u.isAir() || u.parked || !u.trail || u.trail.length < 2) return;
+    const g = this.g;
+    for (let i = 1; i < u.trail.length; i++) {
+      const a = u.trail[i - 1], b = u.trail[i];
+      const k = i / u.trail.length;
+      g.strokeStyle = u.fac === "japan" ? `rgba(160,216,255,${0.35 * k})` : `rgba(255,224,150,${0.35 * k})`;
+      g.lineWidth = 0.5 + 2 * k;
+      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+    }
+  }
   drawUnit(game, u) {
     const g = this.g;
     const img = SPRITES[unitSpriteKey(u.cfg)];
-    const fp = u.footprint() * 2;
+    let fp = u.footprint() * 2;
+    if (u.isAir() && !u.parked) fp += 8;  // in-flight planes are drawn bigger
     if (img) {
       // face movement direction
       g.save();
       g.translate(u.x, u.y);
-      const ang = u.moving || u.target ? Math.atan2((u.target ? u.target.y : (u.path && u.path[0] ? u.path[0].y : u.y)) - u.y, (u.target ? u.target.x : (u.path && u.path[0] ? u.path[0].x : u.x + 1)) - u.x) : (u._dir || 0);
+      const ang = u.moving || (u.moveOrder && !u.parked) || u.target
+        ? Math.atan2((u.target ? u.target.y : u.moveOrder ? u.moveOrder.y : u.y) - u.y, (u.target ? u.target.x : u.moveOrder ? u.moveOrder.x : u.x + 1) - u.x)
+        : (u._dir || 0);
       if (u.isAir()) ang += Math.PI;
       g.rotate(ang);
       g.drawImage(img, -fp / 2 - 2, -fp / 2 - 2, fp + 4, fp + 4);

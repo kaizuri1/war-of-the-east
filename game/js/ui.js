@@ -430,6 +430,12 @@ export class UI {
     for (const b of g.buildings) { if (b.dead) continue; m.fillStyle = b.fac === g.player ? "#3fd66f" : "#f0603a"; m.fillRect(b.tx * sx, b.ty * sy, b.w * sx + 1, b.h * sy + 1); }
     // units (positions are pixels -> divide by TILE for tile space)
     for (const u of g.units) { if (u.dead || !u.isAlive()) continue; m.fillStyle = u.fac === g.player ? "#8dffae" : "#ffcf6a"; m.fillRect(u.x / TILE * sx - 1, u.y / TILE * sy - 1, 2, 2); }
+    // planes: bigger dot + in-flight tick (they move across the map fast)
+    for (const u of g.units) {
+      if (u.dead || !u.isAlive() || !u.isAir()) continue;
+      if (u.parked) { m.fillStyle = u.fac === g.player ? "#cfe3ff" : "#ffe0a0"; m.fillRect(u.x / TILE * sx - 2, u.y / TILE * sy - 2, 4, 4); }
+      else { m.fillStyle = u.fac === g.player ? "#ffffff" : "#ffe680"; const px = u.x / TILE * sx, py = u.y / TILE * sy; m.fillRect(px - 1, py - 1, 3, 3); m.fillRect(px + (u.moving ? 2 : 0), py + (u.moving ? 1 : 0), 1, 1); }
+    }
     // camera viewport rectangle
     if (this.r) {
       const vw = this.cv.clientWidth / this.r.cam.zoom, vh = this.cv.clientHeight / this.r.cam.zoom;

@@ -14,7 +14,7 @@ export class Entity {
 
 // ---------------- Unit ----------------
 export class Unit extends Entity {
-  constructor(cfg, fac, x, y) {
+  constructor(cfg, fac, x, y, game) {
     super(fac);
     this.cfg = cfg;
     this.x = x; this.y = y;            // pixels
@@ -34,6 +34,21 @@ export class Unit extends Entity {
     this.pathFail = 0;                 // repaths in a row that found NO route
     this.homing = 0;                   // air: auto-mission toward enemy front
     this.life = 0;                     // air: total flight time (sec)
+    this.parked = false;               // air: sitting at its airfield, no order
+    this.autoTimer = 0;                // air: sec left before auto-launch
+    this.park = null;                  // air: {x,y} px home spot (airfield)
+    this.trail = [];                   // air: recent flight positions for render
+    this.trailT = 0;
+    // planes are parked ON their airfield at spawn — visible, ready, and under
+    // the player's control. Without an order they auto-launch after 3 s (and
+    // the AI launches them at the enemy immediately).
+    if (cfg.class === "air" && game) {
+      const af = nearestAirfield(game, { fac, x, y });
+      this.park = af ? { x: af.x, y: Math.min(af.y + (af.h || 1) * TILE * 0.35, game.map.h * TILE - 20) } : { x, y: y + 10 };
+      this.x = this.park.x; this.y = this.park.y;
+      this.parked = true;
+      this.autoTimer = 3;
+    }
     this.applyUpgrades();
   }
   applyUpgrades() { /* engine re-applies after tier changes */ }
@@ -147,35 +162,47 @@ export class Unit extends Entity {
     // --- targeting ---
     if (this.cooldown > 0) this.cooldown -= dt;
     this.repath -= dt;
-    // --- air auto-mission: a plane with no order flies to the nearest enemy
-    // ground target and attacks it, then lands after a flight window. Without
-    // this a freshly built aircraft just hovers at the airfield "doing nothing"
-    // (and can drift off-map, which looked like a freeze).
-    if (this.isAir() && !this.landed) {
-      if (this.spawnTimer <= 0) this.life += dt;
-      if (!this.target && (!this.moveOrder || !this.attackMove)) {
-        // pick the closest enemy building/unit to strike
-        let best = null, bd = Infinity;
-        const all = [...game.units, ...game.buildings];
-        for (const e of all) {
-          if (e === this || e.fac === this.fac || e.dead || !e.isAlive()) continue;
-          const ec = e.center ? e.center() : e;
-          const d2 = (ec.x - this.x) ** 2 + (ec.y - this.y) ** 2;
-          if (d2 < bd) { bd = d2; best = e; }
+    // --- air: planes park at their airfield until ordered (or auto-launching
+    // after 3s). In-flight they fly a mission; after TUNE.airMissionTime they
+    // turn back to their home airfield and park again — a reusable aircraft,
+    // never a permanent static wreck.
+    if (this.isAir()) {
+      if (this.parked) {
+        // any player/AI order takes it off at once
+        if (this.moveOrder || this.target) this.parked = false;
+        else {
+          this.autoTimer -= dt;
+          if (this.autoTimer <= 0) this.launch(game);
         }
-        if (best && this.life < TUNE.airMissionTime) {
-          const ec = best.center ? best.center() : best;
-          this.fx = Math.floor(ec.x / TILE); this.fy = Math.floor(ec.y / TILE);
-          this.moveOrder = { x: ec.x, y: ec.y };
-          this.attackMove = true;
-          this.homing = 1;
-        } else if (this.life >= TUNE.airMissionTime) {
-          // land: drop out of the air. Plane becomes a static ground unit —
-          // it stays alive, can be re-ordered, and no longer "flying".
-          this.homing = 0; this.attackMove = false; this.moveOrder = null;
-          this.landed = true; this.speed = 0;
-          this.fx = Math.floor(this.x / TILE); this.fy = Math.floor(this.y / TILE);
+      } else {
+        if (this.spawnTimer <= 0) this.life += dt;
+        if (this.life >= TUNE.airMissionTime) {
+          // flight window over: drop the current order and return home
+          this.moveOrder = null; this.turnBack(game);
+        } else if (!this.target && !this.moveOrder) {
+          // pick the closest enemy building/unit to strike
+          let best = null, bd = Infinity;
+          const all = [...game.units, ...game.buildings];
+          for (const e of all) {
+            if (e === this || e.fac === this.fac || e.dead || !e.isAlive()) continue;
+            const ec = e.center ? e.center() : e;
+            const d2 = (ec.x - this.x) ** 2 + (ec.y - this.y) ** 2;
+            if (d2 < bd) { bd = d2; best = e; }
+          }
+          if (best) this.acquireAirStrike(game, best);
         }
+      }
+      // flight trail for the renderer (last ~1.2s of positions)
+      if (!this.parked) {
+        this.trailT -= dt;
+        if (this.trailT <= 0) {
+          this.trailT = 0.08;
+          this.trail.push({ x: this.x, y: this.y, age: 0 });
+          if (this.trail.length > 16) this.trail.shift();
+        }
+        for (const p of this.trail) p.age += dt;
+      } else {
+        this.trail.length = 0;
       }
     }
     const vrange = this.rangePx() * 1.5;
@@ -185,7 +212,7 @@ export class Unit extends Entity {
     // after 6s idle at a finished order), and the idle scan iterated only
     // game.units, so an enemy building in range was never auto-engaged and a
     // unit following a move path ignored enemies in its path entirely.
-    if (!this.target) {
+    if (!this.target && !this.parked) {
       const range = this.attackMove ? this.rangePx() : vrange;
       const t = game.nearestEnemy(this, range, game);
       if (t) { this.target = t; this.attackMove = false; }
@@ -199,7 +226,9 @@ export class Unit extends Entity {
     }
     // --- movement ---
     let moving = 0;
-    if (this.target) {
+    if (this.parked) {
+      // sitting on the airfield — not moving
+    } else if (this.target) {
       const tc = this.target.center();
       const d = Math.hypot(tc.x - this.x, tc.y - this.y);
       if (d > this.rangePx()) {
@@ -213,6 +242,26 @@ export class Unit extends Entity {
         if (this.cooldown <= 0 && this.spawnTimer <= 0) {
           this.fire(game);
           this.cooldown = this.cfg.rof;
+        }
+      }
+    } else if (this.isAir() && this.moveOrder && (!this.target || this.homing || this.returning)) {
+      // in-flight: FLY STRAIGHT to the waypoint (grid paths only serve ground
+      // units — airfields/buildings are solid and would make flight "impossible")
+      const wx = this.moveOrder.x, wy = this.moveOrder.y;
+      const dx = wx - this.x, dy = wy - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 6) {
+        this.moveOrder = null; this.fx = null; this.fy = null; this.path = null;
+        if (this.returning) this.arriveAndPark();
+        this.x = wx; this.y = wy;
+      } else {
+        const sp = this.speedNow() * this.fuelMult() * (this.speedMult || 1) * dt;
+        this.moveStep(dx / d * sp, dy / d * sp, game);
+        moving = 1;
+        // arrival at the attack waypoint: engage
+        if (!this.returning && d <= this.rangePx() * 1.15 && !this.target) {
+          const t = game.nearestEnemy(this, this.rangePx(), game);
+          if (t) this.target = t;
         }
       }
     } else if (this.fx !== null || this.path) {
@@ -249,7 +298,16 @@ export class Unit extends Entity {
         const sp = this.speedNow() * this.fuelMult() * this.speedMult * dt;
         if (d <= sp || d < 1) {
           this.x = next.x; this.y = next.y; this.path.shift();
-          if (!this.path.length) { this.fx = null; this.fy = null; this.moveOrder = null; }
+          if (!this.path.length) {
+            this.fx = null; this.fy = null; this.moveOrder = null;
+            // inbound for home: snap to the airfield and park
+            if (this.isAir() && this.returning) {
+              if (this.park && Math.hypot(this.park.x - this.x, this.park.y - this.y) > TILE * 2) {
+                // home airfield died en route — snap where we are and park
+              }
+              this.arriveAndPark();
+            }
+          }
         } else {
           this.moveStep(dx / d * sp, dy / d * sp, game);
           moving = 1;
@@ -299,6 +357,46 @@ export class Unit extends Entity {
         if (d < TILE * 1.6) { u.hp = Math.min(u.maxHp, u.hp + TUNE.repairRate * dt); break; }
       }
     }
+  }
+  // take off from the airfield (player/AI order given, or the auto-launch timer expired)
+  launch(game) {
+    if (!this.isAir() || !this.parked) return;
+    this.parked = false;
+    if (this.life > TUNE.airMissionTime) { this.life = 0; this.turnBack(game); return; }
+    if (!this.moveOrder && !this.target) this.acquireAirStrike(game);
+  }
+  // fly straight at a specific enemy (found by the nearest-enemy scan)
+  acquireAirStrike(game, best) {
+    if (!best) return;
+    const ec = best.center ? best.center() : best;
+    this.moveOrder = { x: ec.x, y: ec.y };
+    this.attackMove = true;
+    this.homing = 1;
+  }
+  // end of the flight window: fly back to the home airfield and park
+  turnBack(game) {
+    this.homing = 0; this.attackMove = false;
+    this.target = null;
+    // home airfield may have died — find the closest living friendly one
+    const af = nearestAirfield(game, this);
+    this.park = af
+      ? { x: af.x, y: Math.min(af.y + (af.h || 1) * TILE * 0.35, game.map.h * TILE - 20) }
+      : { x: this.x, y: this.y };
+    if (Math.hypot(this.park.x - this.x, this.park.y - this.y) > 8) {
+      this.moveOrder = { x: this.park.x, y: this.park.y };
+      this.returning = 1;
+      return;
+    }
+    this.arriveAndPark();
+  }
+  // landed on the home airfield: park until ordered (or the 3s auto-launch timer)
+  arriveAndPark() {
+    this.moveOrder = null;
+    this.fx = null; this.fy = null; this.path = null;
+    this.returning = 0; this.parked = true;
+    this.life = 0;
+    this.autoTimer = 3;
+    if (this.park) { this.x = this.park.x; this.y = this.park.y; }
   }
   canBeRepaired() { return this.hp < this.maxHp && !this.isAir(); }
   rangePx() { return this.cfg.range * TILE; }
@@ -434,7 +532,7 @@ function cfgRange(b) { return (b.cfg.weapon ? b.cfg.weapon.range : 6) * TILE; }
 // ---------- factory helpers ----------
 export function makeUnit(cfgId, fac, x, y, game) {
   const cfg = UNITS[cfgId];
-  const u = new Unit(cfg, fac, x, y);
+  const u = new Unit(cfg, fac, x, y, game);
   // upgrade multipliers
   const gt = game.getTier(fac);
   applyUnitUpgrades(u, gt.tier, gt.eff);
@@ -486,6 +584,17 @@ export function targetable(src, e) {
   const allowed = src.cfg && src.cfg.targets;
   if (!allowed) return true;
   return allowed.includes(CLASS_TOKEN[cls] || "veh");
+}
+export function nearestAirfield(game, src) {
+  // closest living friendly airfield (returns building center), or null
+  let best = null, bd = Infinity;
+  for (const b of game.buildings) {
+    if (b.dead || !b.isAlive() || b.fac !== src.fac) continue;
+    if (!b.cfg.produces || b.cfg.produces.split("/").indexOf("air") < 0) continue;
+    const d2 = (b.x - src.x) ** 2 + (b.y - src.y) ** 2;
+    if (d2 < bd) { bd = d2; best = b; }
+  }
+  return best;
 }
 export function nearestEnemy(src, px, game) {
   const fac = src.fac;

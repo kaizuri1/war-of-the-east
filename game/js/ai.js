@@ -281,6 +281,39 @@ export class AI {
       g.units.some((u) => u.fac !== f && !u.dead && u.isAlive() &&
         Math.hypot(u.x - home.x, u.y - home.y) < TILE * 10);
     const mid = { x: home.x + dirX * 0.55, y: home.y + dirY * 0.55 };
+    // --- planes: launch them explicitly (no grid orders — they fly straight).
+    // Parked planes get an attack-move to the nearest enemy structure near the
+    // front; the in-flight auto-mission keeps them hunting after that.
+    for (const u of g.units) {
+      if (u.fac !== f || u.dead || !u.isAlive() || !u.isAir()) continue;
+      if (u.parked) {
+        let best = null, bd = Infinity;
+        for (const e of [...g.units, ...g.buildings]) {
+          if (e === u || e.fac === f || e.dead || !e.isAlive()) continue;
+          const ec = e.center ? e.center() : e;
+          const dmid = (ec.x - mid.x) ** 2 + (ec.y - mid.y) ** 2;
+          const d2 = (ec.x - u.x) ** 2 + (ec.y - u.y) ** 2 + dmid * 0.25;
+          if (d2 < bd) { bd = d2; best = e; }
+        }
+        if (best) u.launch(g); // launch() auto-aims at the nearest enemy
+      } else if (!u.moveOrder && !u.target && !u.returning && (u.life || 0) < TUNE.airMissionTime) {
+        // in flight but unaimed (e.g. target died en route): re-aim
+        let best = null, bd = Infinity;
+        const all = [...g.units, ...g.buildings];
+        for (const e of all) {
+          if (e === u || e.fac === f || e.dead || !e.isAlive()) continue;
+          const ec = e.center ? e.center() : e;
+          const d2 = (ec.x - u.x) ** 2 + (ec.y - u.y) ** 2;
+          if (d2 < bd) { bd = d2; best = e; }
+        }
+        if (best) {
+          const ec = best.center ? best.center() : best;
+          u.moveOrder = { x: ec.x, y: ec.y };
+          u.attackMove = true;
+          u.homing = 1;
+        }
+      }
+    }
     const myUnits = g.units.filter((u) =>
       u.fac === f && !u.dead && u.isAlive() && !u.isStatic() && u.class() !== "gun" &&
       u.cfg?.targets?.includes("inf") !== false && !u.cfg?.engineer); // guns stay as defense
