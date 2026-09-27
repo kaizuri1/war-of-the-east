@@ -6,8 +6,10 @@ const { spawn } = await import("node:child_process");
 const { once } = await import("node:events");
 
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
-const PORT = 9222;
-const BASE = "http://localhost:8137/index.html";
+const PORT = 5000;
+const BASE_PORT = 8139;
+const BASE = `http://localhost:${BASE_PORT}/index.html`;
+const server = spawn("python", ["-m", "http.server", String(BASE_PORT), "--directory", "game"], { stdio: "ignore" });
 
 const chrome = spawn(CHROME, [
   "--headless=new", "--no-sandbox", "--disable-gpu", "--mute-audio",
@@ -146,5 +148,5 @@ consoleErrors.length === 0 ? ok("no console.error in page") : bad("console error
 pageErrors.length === 0 ? ok("no uncaught page exceptions") : bad("page exceptions:\n  " + pageErrors.join("\n  "));
 
 console.log(fails ? `RESULT: ${fails} FAIL` : "RESULT: ALL PASS");
-sock.close(); chrome.kill();
+sock.close(); chrome.kill(); server.kill();
 process.exit(fails ? 1 : 0);
