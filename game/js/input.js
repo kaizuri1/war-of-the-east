@@ -290,7 +290,7 @@ export class Input {
       if (mx < E) mh = -1; else if (mx > this.cv.clientWidth - E) mh = 1;
       if (my < E) mv = -1; else if (my > this.cv.clientHeight - E) mv = 1;
     }
-    const h = mh || (this.edges.l ? 1 : this.edges.r ? -1 : 0);
+    const h = mh || (this.edges.l ? -1 : this.edges.r ? 1 : 0);
     // Camera y is "world top-edge": to raise the view (W / top edge) we DECREASE
     // cam.y. (Old code added, so W and S — and the top/bottom screen edges —
     // moved in the opposite of the intended direction.)
