@@ -7,7 +7,7 @@ import { Renderer } from "./renderer.js";
 import { Input } from "./input.js";
 import { UI } from "./ui.js";
 import { AI } from "./ai.js";
-import { buildTiles, buildSprites, loadArtOverrides, TILES } from "./sprites.js";
+import { buildTiles, buildSprites, loadArtOverrides, TILES, setTeamPalettes, clearTeamPalettes } from "./sprites.js";
 import { bootMenu, setSfx, MENU } from "./menu.js";
 
 let game, renderer, input, ui, ai, canvas, sfx;
@@ -63,10 +63,18 @@ function playGame(cfg) {
   // clears terrain / seeds resources around the ACTUAL spawn, not the corner.
   const w = m.w, h = m.h;
   const OFF = 6;
+  // Player entry corner (menu picks sw default or ne); enemy takes the opposite.
+  const spot = cfg.spot === "ne" ? { x: w - OFF - 1, y: h - OFF - 1 } : { x: OFF, y: OFF };
+  const enemyX = spot.x === OFF ? w - OFF - 1 : OFF;
+  const enemyY = spot.y === OFF ? h - OFF - 1 : OFF;
   const spots = [
-    { fac: cfg.player, cx: OFF, cy: OFF },
-    { fac: cfg.player === "china" ? "japan" : "china", cx: w - OFF - 1, cy: h - OFF - 1 },
+    { fac: cfg.player, cx: spot.x, cy: spot.y },
+    { fac: cfg.aiFac || (cfg.player === "china" ? "japan" : "china"), cx: enemyX, cy: enemyY },
   ];
+  // Team colors: re-bake sprites with the chosen palettes BEFORE the engine
+  // (and first render) uses them. Null = keep that faction's default palette.
+  if (cfg.playerPal || cfg.enemyPal) setTeamPalettes(cfg.player, cfg.aiFac || (cfg.player === "china" ? "japan" : "china"), cfg.playerPal, cfg.enemyPal);
+  else clearTeamPalettes();
   const corners = spots.map((s) => ({ x: s.cx, y: s.cy, tag: "" }));
   const mapFinal = generateMap({ w, h, seed: m.seed, corners });
   const resTier = RES_TIERS[cfg.res] || null;

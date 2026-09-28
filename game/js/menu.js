@@ -27,6 +27,12 @@ let sfx = null;                 // set via setSfx() after the sound system is bu
 let handlers = null;            // { onStart(sel), onQuit(), saveCam(x, y) }
 export function getHandlers() { return handlers; }
 let started = false;            // true once the player chose START BATTLE
+// Skirmish start-spot + team-color selections (module-scope so the summary and
+// the START handler can share them).
+let spotSel = "sw";             // player entry corner: nw|ne|se|sw (enemy is diagonal)
+let colorSel = "default";       // null/"default" = faction palette; else team swatch id
+const SPOT_LABELS = { nw: "1 · NW", ne: "2 · NE", se: "3 · SE", sw: "4 · SW" };
+const SPOT_DIAG = { nw: "se", se: "nw", ne: "sw", sw: "ne" };
 const beep = (f0, f1, d, type = "square", vol = 0.025) =>
   (sfx && sfx.beep ? sfx.beep(f0, f1, d, type, vol)
     : (typeof window.setGameAudio === "function" && window.setGameAudio.beep) ? window.setGameAudio.beep(f0, f1, d, type, vol)
@@ -51,7 +57,8 @@ function segRow(container, values, selected, cb) {
   r.className = "menu-seg";
   for (const v of values) {
     const b = document.createElement("button");
-    b.textContent = v.label;
+    if (v.html) b.innerHTML = v.html;   // rich content (e.g. flag + name)
+    else b.textContent = v.label;
     b.dataset.v = v.id;
     if (v.id === selected) b.classList.add("on");
     b.addEventListener("click", () => {
@@ -119,15 +126,155 @@ function syncSummary() {
   const d = document.querySelector("#sk-diff .on")?.dataset.v || "medium";
   const map = document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id;
   const m = MAPS.find((x) => x.id === map) || MAPS[0];
+  const colorInfo = document.getElementById("sk-colorinfo");
+  if (colorInfo) {
+    const { playerPal, enemyPal } = deriveTeamPalettes(f, ai, colorSel);
+    const pl = (playerPal && playerPal.base) || FACTION_META[f].color;
+    const em = (enemyPal && enemyPal.base) || FACTION_META[ai].color;
+    const custom = colorSel && colorSel !== "default";
+    colorInfo.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px"><span class="swatch-dot" style="background:${pl}"></span>you</span>&nbsp;vs&nbsp;<span style="display:inline-flex;align-items:center;gap:4px"><span class="swatch-dot" style="background:${em}"></span>AI</span>${custom ? "" : "&nbsp;(faction defaults)"}`;
+  }
   el.textContent =
     `${FACTION_META[f].nameEN} vs ${FACTION_META[ai].nameEN} — ${m.name} — ` +
-    `funds ${r.toUpperCase()} — AI ${AI_DIFF[d].label}`;
+    `start ${SPOT_LABELS[spotSel] || "4 · SW"} — funds ${r.toUpperCase()} — AI ${AI_DIFF[d].label}`;
 }
 
 function markAiWarning() {
   const mine = document.querySelector("#sk-fac .on")?.dataset.v;
   document.querySelector("#sk-ai .on")?.classList.toggle("warn", mine && mine === document.querySelector("#sk-ai .on").dataset.v);
 }
+// TEAM COLOR PALETTES — id -> full PAL-style palette (primary/dark/light/shade/
+// accent) used to recolor a faction's units & buildings when a non-default team
+// color is chosen. Each swatch yields a complete, readable 5-swatch palette.
+const TEAM_PALETTES = {
+  crimson: ["#e2483f", "#9c2b25", "#f38b83", "#5e1713", "#ffd9d6"],
+  azure:   ["#3a86e0", "#25568f", "#79b3ff", "#123054", "#d6e8ff"],
+  forest:  ["#3fa34d", "#276632", "#82d18f", "#14371b", "#d5f2da"],
+  violet:  ["#9b5bd9", "#63368f", "#c592ef", "#3a1e57", "#ecd9ff"],
+  amber:   ["#e0952f", "#98621a", "#f0c078", "#5c3a0d", "#fdeecb"],
+  silver:  ["#c2cad2", "#7f8a94", "#e6ebf0", "#454e57", "#f4f7fa"],
+  rose:    ["#d76b93", "#93395c", "#f0a0bb", "#571f33", "#fbdce7"],
+};
+// Build a sprite-baking palette (sprites.js PAL shape: base/dark/trim/armor/
+// armorD/metal) from a 5-swatch team palette [primary, dark, light, shade,
+// accent]. Team colors recolor units+buildings but keep the faction's trim/
+// metal so each faction's design language still reads. trim/metal come from
+// the faction's OWN config colors so both sides keep their national look.
+function teamPaletteFor(colorId, fac) {
+  if (!colorId || colorId === "default") return null;   // use the faction's own PAL
+  const t = TEAM_PALETTES[colorId];
+  if (!t) return null;
+  const fm = FACTION_META[fac] || {};
+  return {
+    base: t[0], dark: t[1], trim: fm.accent || t[4],
+    armor: t[3], armorD: t[1], metal: darken(t[0], 0.85),
+  };
+}
+// Derive BOTH sides' team palettes (PAL shape, or null = keep faction default).
+// If the player picked a custom team color, the enemy auto-derives its OWN
+// faction default shifted ~150° in hue so both sides always read clearly.
+// Returns { playerPal, enemyPal } where each is null or a PAL-shaped object.
+export function deriveTeamPalettes(playerFac, aiFac, playerColorId) {
+  const playerPal = teamPaletteFor(playerColorId, playerFac);
+  if (playerPal) {
+    return { playerPal, enemyPal: shiftPals({ base: FACTION_META[aiFac].color, dark: FACTION_META[aiFac].dark, trim: FACTION_META[aiFac].accent, armor: FACTION_META[aiFac].color, armorD: FACTION_META[aiFac].dark, metal: darken(FACTION_META[aiFac].color, 0.85) }, 150) };
+  }
+  return { playerPal: null, enemyPal: null };
+}
+// Rotate EVERY color in a PAL-shaped object by deg (keeps the same 6 keys).
+function shiftPals(pal, deg) {
+  return Object.fromEntries(Object.entries(pal).map(([k, v]) => [k, (v && v[0] === "#") ? (rotateHue(v, deg) || v) : v]));
+}
+// Rotate every hsl() color in a palette by `deg` (and nudge lightness down a
+// touch for darker variants) so the derived enemy is visually distinct but
+// still reads as a full team palette.
+function shiftPalette(pal, deg) {
+  return pal.map((c, i) => {
+    const m = c.match(/hsl\((\d+(?:\.\d+)?)[ ,]+(\d+)%[ ,]+(\d+)%\)/);
+    if (m) return `hsl(${((+m[1] + deg) % 360)}, ${m[2]}%, ${m[3]}%)`;
+    if (c[0] === "#" && c.length === 7) {
+      const slot = i === 1 ? -0.35 : i === 3 ? -0.5 : i === 2 ? 0.3 : i === 4 ? 0.45 : 0;
+      return mixColor(rotateHue(c, deg) || c, slot);
+    }
+    return c;
+  });
+}
+function darken(c, f) { const t = hexToRgb(c); return t ? `rgb(${t[0] * f | 0},${t[1] * f | 0},${t[2] * f | 0})` : c; }
+function lighten(c, f) { const t = hexToRgb(c); return t ? `rgb(${Math.min(255, t[0] + (255 - t[0]) * f) | 0},${Math.min(255, t[1] + (255 - t[1]) * f) | 0},${Math.min(255, t[2] + (255 - t[2]) * f) | 0})` : c; }
+function hexToRgb(c) { const m = c.match(/^#?([\da-f]{6})$/i); if (!m) return null; const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+// hex -> rotate hue by deg -> hex ("" if unparseable).
+function rotateHue(hex, deg) {
+  const r = hexToRgb(hex); if (!r) return "";
+  let [R, G, B] = r.map((v) => v / 255);
+  const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+  let h = 0, s = 0, l = (mx + mn) / 2;
+  if (mx != mn) {
+    const d = mx - mn;
+    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    h = mx === R ? (G - B) / d + (G < B ? 6 : 0) : mx === G ? (B - R) / d + 2 : (R - G) / d + 4;
+    h *= 60;
+  }
+  h = (h + deg) % 360;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = (t) => { if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t; if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6; return p; };
+  const H = h / 360, out = [f(H + 1/3), f(H), f(H - 1/3)].map((v) => (v * 255) | 0);
+  return "#" + out.map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+// amt > 0 → toward white, amt < 0 → toward black (used for light/dark/accent slots).
+function mixColor(hex, amt) {
+  const rgb = hexToRgb(hex); if (!rgb) return hex;
+  const t = Math.min(0.9, Math.abs(amt)), tgt = amt > 0 ? 255 : 0;
+  return "#" + rgb.map((v) => (v + (tgt - v) * t) | 0).map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+// ---- era-appropriate national flags (WW2 / 1937-1945) ----
+function factionFlagSVG(id) {
+  if (id === "china") {
+    // 1928 Republic of China: red field, five-pointed star in the canton +
+    // four stars toward the fly edge (the wartime ROC / Republic flag).
+    const star = (cx, cy, r) => {
+      let d = "";
+      for (let i = 0; i < 5; i++) {
+        const a = (Math.PI / 2) * -1 + i * (2 * Math.PI / 5);
+        const a2 = a + Math.PI / 5;
+        d += (i ? "L" : "M") + (cx + Math.cos(a) * r).toFixed(2) + " " + (cy + Math.sin(a) * r).toFixed(2) +
+             "L" + (cx + Math.cos(a2) * r * 0.42).toFixed(2) + " " + (cy + Math.sin(a2) * r * 0.42).toFixed(2);
+      }
+      return `<path fill="#ffde00" d="${d}Z"/>`;
+    };
+    return `<svg viewBox="0 0 32 24" class="flag" aria-hidden="true"><rect width="32" height="24" fill="#de2910"/>${star(6.5, 7.5, 5.4)}${star(15, 3.2, 1.9)}${star(17.4, 6.6, 1.9)}${star(17.4, 10.6, 1.9)}${star(15, 14, 1.9)}</svg>`;
+  }
+  if (id === "japan") {
+    // 1905 Empire of Japan "Rising Sun" war flag: red disc + 16 rays.
+    let rays = "";
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8;
+      const x1 = 16, y1 = 12;
+      const x2 = 16 + Math.cos(a) * 14.5, y2 = 12 + Math.sin(a) * 14.5;
+      rays += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#bc002d" stroke-width="1.4"/>`;
+    }
+    return `<svg viewBox="0 0 32 24" class="flag" aria-hidden="true"><rect width="32" height="24" fill="#f4f5f7"/>${rays}<circle cx="16" cy="12" r="6.4" fill="#bc002d"/></svg>`;
+  }
+  return "";
+}
+
+function factionButtonHTML(f) {
+  const m = FACTION_META[f];
+  return `${factionFlagSVG(f)}<span class="fcol">${m.nameEN}<small>${m.label}</small></span>`;
+}
+
+// ---- selectable team (troop) colors — rendered via hue-rotate in the renderer ----
+export const TEAM_COLORS = [
+  { hex: "#3f7a3f", name: "Green",       sub: "standard" },
+  { hex: "#b03a2e", name: "Crimson",     sub: "signal red" },
+  { hex: "#8a929e", name: "Steel",       sub: "grey" },
+  { hex: "#c8a042", name: "Gold",        sub: "ochre" },
+  { hex: "#2f5fb0", name: "Blue",        sub: "cobalt" },
+  { hex: "#246a3a", name: "Olive",       sub: "forest" },
+  { hex: "#c2b04a", name: "Sand",        sub: "khaki" },
+];
 
 // ================================================================
 export function bootMenu(h) {
@@ -263,6 +410,15 @@ function buildSkirmish() {
         <div id="sk-ai" class="menu-facs"></div>
       </div>
       <div class="menu-box">
+        <h3>START SPOT</h3>
+        <div class="menu-hint">your entry corner — the AI spawns diagonally across the field</div>
+        <div id="sk-spot"></div>
+        <h3 class="mt2">TEAM COLOR</h3>
+        <div class="menu-hint">recolors your troops · the enemy auto-gets a matching but distinct color</div>
+        <div id="sk-color"></div>
+        <div id="sk-colorinfo" class="menu-info"></div>
+      </div>
+      <div class="menu-box">
         <h3>STARTING FUNDS</h3>
         <div id="sk-res"></div>
         <div id="sk-resinfo" class="menu-info"></div>
@@ -299,13 +455,51 @@ function buildSkirmish() {
     mapThumb(cv, m);
   });
 
-  // --- faction pickers ---
-  const facValues = Object.keys(FACTION_META).map((k) => ({ id: k, label: FACTION_META[k].nameEN }));
+  // --- faction pickers (with era flags + nation labels) ---
+  const facValues = Object.keys(FACTION_META).map((k) => ({ id: k, label: FACTION_META[k].nameEN, html: factionButtonHTML(k) }));
   segRow(document.getElementById("sk-fac"), facValues, "china", markAiWarning);
   segRow(document.getElementById("sk-ai"), facValues, "japan", null);
   // make the (now-stale) ai click handler also re-warn — segRow bound cb=null;
   for (const b of document.getElementById("sk-ai").children) {
     b.addEventListener("click", markAiWarning);
+  }
+
+  // --- start spot (entry corner; enemy spawns the diagonal corner) ---
+  const SPOTS = [
+    { id: "nw", label: "1 · NW" }, { id: "ne", label: "2 · NE" },
+    { id: "se", label: "3 · SE" }, { id: "sw", label: "4 · SW" },
+  ];
+  const spotDiag = { nw: "se", se: "nw", ne: "sw", sw: "ne" };
+  segRow(document.getElementById("sk-spot"), SPOTS, "sw", (id) => {
+    spotSel = id; syncSummary();
+  });
+
+  // --- team color (player swatch; enemy auto-derives a distinct palette) ---
+  const TEAM_COLORS = [
+    { id: "default", label: "Faction", hex: null },
+    { id: "crimson", label: "Crimson", hex: "#e2483f" },
+    { id: "azure", label: "Azure", hex: "#3a86e0" },
+    { id: "forest", label: "Forest", hex: "#3fa34d" },
+    { id: "violet", label: "Violet", hex: "#9b59d9" },
+    { id: "amber", label: "Amber", hex: "#e0952f" },
+    { id: "silver", label: "Silver", hex: "#c2cad2" },
+    { id: "rose", label: "Rose", hex: "#d76b93" },
+  ];
+  const colorSelEl = document.getElementById("sk-color");
+  for (const c of TEAM_COLORS) {
+    const b = document.createElement("button");
+    b.className = "team-swatch" + (c.id === "default" ? " on" : "");
+    b.dataset.v = c.id;
+    b.innerHTML = c.hex
+      ? `<span class="swatch-dot" style="background:${c.hex}"></span>${c.label}`
+      : `<span class="swatch-dot" style="background:linear-gradient(135deg,#8f6b1e,#5e3aa8)"></span>${c.label}`;
+    b.addEventListener("click", () => {
+      beep(430, 430, 0.03, "sine", 0.02);
+      for (const x of colorSelEl.children) x.classList.remove("on");
+      b.classList.add("on");
+      colorSel = c.id; syncSummary();
+    });
+    colorSelEl.appendChild(b);
   }
 
   // --- resource tiers ---
@@ -344,12 +538,19 @@ function buildSkirmish() {
     show(0);
   });
   document.getElementById("sk-start").addEventListener("click", () => {
+    const playerFac = document.querySelector("#sk-fac .on")?.dataset.v || "china";
+    const aiFac = document.querySelector("#sk-ai .on")?.dataset.v || "japan";
+    const { playerPal, enemyPal } = deriveTeamPalettes(playerFac, aiFac, colorSel);
     const sel = {
-      player: document.querySelector("#sk-fac .on")?.dataset.v || "china",
-      aiFac: document.querySelector("#sk-ai .on")?.dataset.v || "japan",
+      player: playerFac,
+      aiFac,
       res: document.querySelector("#sk-res .on")?.dataset.v || "medium",
       diff: document.querySelector("#sk-diff .on")?.dataset.v || "medium",
       map: MAPS.find((m) => m.id === (document.querySelector("#sk-maps .on")?.dataset.v || MAPS[0].id)) || MAPS[0],
+      spot: spotSel,                       // player entry corner id (nw|ne|se|sw)
+      enemySpot: SPOT_DIAG[spotSel] || "ne",   // enemy gets the diagonal corner
+      playerPal,                           // 5-swatch palette (faction default or team color)
+      enemyPal,
     };
     started = true;
     beep(620, 920, 0.12, "triangle", 0.03);

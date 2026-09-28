@@ -34,6 +34,29 @@ const PAL = {
   china: { base: "#4a7a3a", dark: "#2f5426", trim: "#c9a227", armor: "#5d8a4a", armorD: "#3f5f33", metal: "#6b7a52" },
   japan: { base: "#5b6248", dark: "#39402d", trim: "#c0402a", armor: "#6a7355", armorD: "#49523a", metal: "#7a7466" },
 };
+// Per-faction team-color overrides. When set, sprite baking uses these base/
+// dark/armor/armorD/metal colors but KEEPS the faction's trim (national accent)
+// so both sides still read as distinct factions. Cleared by clearTeamPalettes().
+const PAL_OVERRIDES = { china: null, japan: null };
+// Apply this match's team-color overrides, then re-bake every sprite so units
+// and buildings pick up the new colors. playerPal/enemyPal are null to KEEP that
+// faction's default palette.
+export function setTeamPalettes(playerFac, aiFac, playerPal, enemyPal) {
+  PAL_OVERRIDES[playerFac] = playerPal || null;
+  PAL_OVERRIDES[aiFac] = enemyPal || null;
+  buildSprites();
+}
+export function clearTeamPalettes() {
+  PAL_OVERRIDES.china = null; PAL_OVERRIDES.japan = null;
+  buildSprites();
+}
+// Palette for a faction, honoring team-color overrides (keeps the faction's
+// trim so identity still reads) — every gInfantry/gTank/gGun/gPlane/gBuilding
+// draw reads colors through this.
+function palFor(fac) {
+  const ov = PAL_OVERRIDES[fac];
+  return ov ? { ...PAL[fac], ...ov } : PAL[fac];
+}
 
 const canvasCache = new Map();
 
@@ -56,7 +79,7 @@ function shade(hex, amt) {
 //        elite (gold star)
 function gInfantry(id, fac) {
   const { c, g } = mkCanvas(28, 28);
-  const p = PAL[fac];
+  const p = palFor(fac);
   const role =
     id.endsWith("heavy") ? "heavy" :
     id.endsWith("gren") ? "gren" :
@@ -177,7 +200,7 @@ function gTank(id, fac) {
     j_205:   { h: 0.84, r: 0.18, bl: 0.62, bw: 0.10, twin: true },
   }[id] || { h: 0.66, r: 0.13, bl: 0.48, bw: 0.06 };
   const { c, g } = mkCanvas(size, size);
-  const p = PAL[fac];
+  const p = palFor(fac);
   const cx = size / 2, cy = size / 2;
   const hw = size * (0.30 + S.h * 0.14), hh = size * (S.h / 2); // hull dims from silhouette size
   g.fillStyle = "rgba(0,0,0,.3)"; g.beginPath(); g.ellipse(cx, cy + 3, hw, size * 0.46, 0, 0, 7); g.fill();
@@ -235,7 +258,7 @@ function gGun(id, fac) {
   const aa = !!u.aa;
   const at2 = !!u.at && u.dmg >= 40;      // tier-2 AT (bigger, heavier)
   const { c, g } = mkCanvas(36, 36);
-  const p = PAL[fac];
+  const p = palFor(fac);
   g.fillStyle = "rgba(0,0,0,.28)";
   g.beginPath(); g.ellipse(18, 20, aa ? 12 : 13, aa ? 13 : 14, 0, 0, 7); g.fill();
 
@@ -307,7 +330,7 @@ function gPlane(id, fac) {
   const t = UNITS[id];
   const size = t.rare || t.tier >= 2 ? 52 : 46;
   const { c, g } = mkCanvas(size, size);
-  const p = PAL[fac];
+  const p = palFor(fac);
   const cx = size / 2;
   g.fillStyle = "rgba(0,0,0,.2)"; g.beginPath(); g.ellipse(cx, size * 0.72, size * 0.4, size * 0.12, 0, 0, 7); g.fill();
   // wings (center-crossing, X shape like classic top-down plane)
@@ -337,7 +360,7 @@ function gBuilding(id, fac) {
   const b = BUILDINGS[id];
   const w = (b.w || 1) * 32 - 4, h = (b.h || 1) * 32 - 4;
   const { c, g } = mkCanvas(w, h);
-  const p = PAL[fac];
+  const p = palFor(fac);
   // base slab
   g.fillStyle = "#565147"; roundRect(g, 1, 1, w - 2, h - 2, 3); g.fill();
   g.fillStyle = p.base; roundRect(g, 3, 3, w - 6, h - 6, 2); g.fill();

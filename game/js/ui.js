@@ -70,7 +70,10 @@ export class UI {
             <div style="display:flex;align-items:center;gap:8px"><span style="min-width:84px;font-size:11px;letter-spacing:1px">SFX VOLUME</span><input id="pauseSfxVol" type="range" min="0" max="100" style="flex:1;accent-color:#c8a06a"><span id="pauseSfxVal" style="min-width:34px;text-align:right;font-size:11px">100%</span></div>
             <div style="display:flex;align-items:center;gap:8px"><span style="min-width:84px;font-size:11px;letter-spacing:1px">MUSIC VOLUME</span><input id="pauseMusVol" type="range" min="0" max="100" style="flex:1;accent-color:#c8a06a"><span id="pauseMusVal" style="min-width:34px;text-align:right;font-size:11px">50%</span></div>
           </div>
-          <button class="overbtn" id="pauseResume">RESUME — ESC</button>
+          <div id="pauseBtns" style="display:flex;gap:10px;justify-content:center">
+            <button class="overbtn" id="pauseResume">RESUME — ESC</button>
+            <button class="overbtn" id="pauseQuit" style="border-color:#8a4a3a;color:#e8c6c0">QUIT TO MENU — Q</button>
+          </div>
         </div>
       </div>`;
 
@@ -204,6 +207,10 @@ export class UI {
     // pause overlay: resume button (Esc also works)
     const pr = this.root.querySelector("#pauseResume");
     if (pr) pr.addEventListener("click", () => { if (this.in) this.in.togglePause(); });
+    // pause overlay: QUIT TO MENU — the proven path is a full reload (same as
+    // the game-over screen), which re-mounts the menu from scratch.
+    const pq = this.root.querySelector("#pauseQuit");
+    if (pq) pq.addEventListener("click", () => location.reload());
     // pause overlay: live volume sliders (#6 — settings during the game)
     this.bindPauseVol();
   }

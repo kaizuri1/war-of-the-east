@@ -311,6 +311,15 @@ body {
 .menu-mapd span { font-size: 10px; color: #8a8458; }
 
 #sk-fac, #sk-ai { margin-top: 2px; }
+.menu-facs .menu-seg button { align-items: center; gap: 8px; min-width: 0; padding: 6px 10px; }
+.menu-facs .menu-seg button .flag {
+  width: 46px; height: 34px; flex: 0 0 auto;
+  display: block; background: #fff; border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.5);
+}
+.menu-facs .menu-seg button.on .flag { box-shadow: 0 0 0 2px #ffe9a0, 0 0 8px rgba(255,233,160,.5); }
+.menu-facs .menu-seg button .fcol { text-align: left; font-size: 12px; line-height: 1.15; letter-spacing: .04em; }
+.menu-facs .menu-seg button .fcol small { display: block; font-size: 10px; color: #8a8458; }
 .menu-seg { display: flex; gap: 6px; }
 .menu-seg button {
   flex: 1; appearance: none; pointer: cursor; cursor: pointer; font-family: inherit;
