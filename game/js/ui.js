@@ -211,6 +211,19 @@ export class UI {
     // the game-over screen), which re-mounts the menu from scratch.
     const pq = this.root.querySelector("#pauseQuit");
     if (pq) pq.addEventListener("click", () => location.reload());
+    // pause overlay: Q hotkey quits to menu (button label promises it).
+    // Bound at module level so it survives re-mount; guarded on game +
+    // paused state + no winner so it never fires during play or on the
+    // game-over screen (that one owns Enter-to-restart).
+    if (!this._qBound) {
+      this._qBound = true;
+      window.addEventListener("keydown", (e) => {
+        if (String(e.key).toLowerCase() !== "q") return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        const g = this.g;
+        if (g && g.paused && !g.winner) location.reload();
+      });
+    }
     // pause overlay: live volume sliders (#6 — settings during the game)
     this.bindPauseVol();
   }
