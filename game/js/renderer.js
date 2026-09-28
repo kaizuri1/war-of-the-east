@@ -174,11 +174,19 @@ export class Renderer {
       g.save();
       g.globalAlpha = spawnBlink;
       g.translate(u.x, u.y);
+      // Ground/sea units use the smooth swivel angle computed in Entities.js
+      // (u.aim) so their turrets visibly rotate to track targets (#4).
+      // Air units keep their instant snap (+PI so the sprite's nose leads).
       const t = u.target && !u.target.dead ? u.target : null;
       const mo = u.moveOrder && !u.parked ? u.moveOrder : null;
-      let ang = t || mo
-        ? Math.atan2((t ? t.y : mo.y) - u.y, (t ? t.x : mo.x) - u.x)
-        : (u._dir || 0);
+      let ang;
+      if (!u.isAir() && u.aim != null) {
+        ang = u.aim;
+      } else {
+        ang = t || mo
+          ? Math.atan2((t ? t.y : mo.y) - u.y, (t ? t.x : mo.x) - u.x)
+          : (u._dir || 0);
+      }
       if (u.isAir()) ang += Math.PI;
       g.rotate(ang);
       // parked planes get a ground shadow so they read as sitting on the field

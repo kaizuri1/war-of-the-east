@@ -143,7 +143,7 @@ export class Game {
     this.rebuildOccupied();
     this.log("Bases deployed. Destroy the enemy depot!", "info");
   }
-  sound(n) { try { if (this._sfx) this._sfx(n); } catch (e) { /* audio must never crash the tick */ } }
+  sound(n) { try { if (this._sfx) (typeof this._sfx === "function" ? this._sfx : this._sfx.play)(n); } catch (e) { /* audio must never crash the tick */ } }
   nearestEnemy(src, range, game) { return nE(src, range, game); }
   log(msg, kind = "info") {
     this.events.push({ t: this.time, kind, msg });
@@ -239,7 +239,29 @@ export class Game {
     return true;
   }
 
-  // ---------- production ----------
+  // ---------- continuous auto-repair (#5) ----------
+  // Entities the player has marked with `e._repairing = true` keep repairing
+  // every frame until they are full or they run out of tin (which clears the
+  // flag). Cost ratio matches the one-shot repairB: 10 tin per repair-second.
+  repairContinuous(fac, dt) {
+    const F = this.fac[fac];
+    const rate = TUNE.repairRate * dt;               // hp to this frame
+    if (rate <= 0) return;
+    const tryRep = (e) => {
+      if (!e._repairing) return false;
+      if (!e.isAlive() || e.hp >= e.maxHp) { e._repairing = false; return false; }
+      const gain = Math.min(rate, e.maxHp - e.hp);
+      const cost = (gain / rate) * 10;              // tin (== 10 per full second)
+      if ((F.res.tin || 0) < cost) { e._repairing = false; return false; } // out of money
+      F.res.tin -= cost;
+      e.hp = Math.min(e.maxHp, e.hp + gain);
+      e._repairFx = true;
+      if (this.onUiTick) this.onUiTick("repair", e);
+      return true;
+    };
+    for (const b of this.buildings) if (b.fac === fac && b._repairing) tryRep(b);
+    for (const u of this.units)   if (u.fac === fac && u._repairing) tryRep(u);
+  }
   unitAvailable(fac, id) {
     const u = UNITS[id];
     if (!u || u.fac !== fac) return false;
@@ -454,6 +476,10 @@ export class Game {
     this.time += dt;
     this.rebuildOccupied();
     this.economy(dt);
+    // continuous auto-repair (#5): entities marked `._repairing` heal every
+    // frame for both player and AI, stopping when full or out of tin
+    this.repairContinuous(this.player, dt);
+    this.repairContinuous(this.aiFac, dt);
     // per-entity try/catch: one bad entity must never halt the whole tick
     // (a single throw used to freeze all unit movement + construction)
     for (const u of this.units) {

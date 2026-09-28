@@ -33,6 +33,11 @@ export class Unit extends Entity {
     this.spawnTimer = 0.4;             // grace after emerging from factory
     this.pathFail = 0;                 // repaths in a row that found NO route
     this._follow = false;              // following a NON-attack-walk order: suppresses auto-acquire
+    // auto-attack is ON by default; the `auto` flag is what `auto-acquire` reads
+    // (see Unit.update below). It was never set before, so ground units with no
+    // movement order never scanned for nearby enemies — the "auto-attack broken
+    // for some units" bug.
+    this.auto = !cfg.nonauto;
     this.homing = 0;                   // air: auto-mission toward enemy front
     this.life = 0;                     // air: total flight time (sec)
     this.parked = false;               // air: sitting at its airfield, no order
@@ -334,6 +339,27 @@ export class Unit extends Entity {
       }
     }
     this.moving = moving;
+    // --- smooth facing / turret swivel (#4) ---
+    // Compute the raw aim we want to face: target first, then a move order,
+    // else the current movement heading. We lerp a dedicated `this.aim`
+    // angle toward it so vehicles rotate smoothly (the whole sprite is the
+    // turret in this art style — buildings already swivel the same way).
+    // Air units keep their instant-snap behaviour (handled in the renderer).
+    if (!this.isAir()) {
+      const t = this.target && !this.target.dead ? this.target : null;
+      const mo = this.moveOrder && !this.parked ? this.moveOrder : null;
+      let raw;
+      if (t) raw = Math.atan2(t.y - this.y, t.x - this.x);
+      else if (mo) raw = Math.atan2(mo.y - this.y, mo.x - this.x);
+      else raw = this._dir || 0;
+      if (this.aim == null) this.aim = raw;
+      // shortest-path angular lerp, capped so a turret never "spins around"
+      let d = raw - this.aim;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const turn = (this.cfg.turnRate || 3.5) * dt;    // rad/s (180° in ~0.5s)
+      this.aim += Math.abs(d) <= turn ? d : Math.sign(d) * turn;
+    }
     // engineer: capture / repair while stationary
     if (this.cfg.engineer && this.spawnTimer <= 0) {
       for (const b of game.buildings) {

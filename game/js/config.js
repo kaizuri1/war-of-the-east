@@ -42,6 +42,79 @@ export const MAPS = [
 
 export const FACS = ["china", "japan"];
 
+// ---------- version + update log (#7) ----------
+// Bump the minor for every shipped update. The UPDATES list is newest-first and
+// is shown in the main menu (UPDATES button). Keep the newest entry in sync
+// with VERSION.
+export const VERSION = "1.8";
+export const UPDATES = [
+  { v: "1.8", date: "2026-09-28", text: "Smooth tank-turret swivel; continuous building repair; in-game volume sliders (pause menu); reassignable hotkeys; Ctrl/Shift +×5 unit queue; unit count in the update log." },
+  { v: "1.7", date: "2026-09-28", text: "Box-select only picks your own units; distinct AT/AA/infantry sprites; AI builds a mixed force and attacks in waves." },
+  { v: "1.6", date: "2026-09-28", text: "Multi-click production queue; auto-attack for all units; fixed A/D scroll + arrow keys; relocated spawn off the map corner." },
+  { v: "1.5", date: "2026-09-27", text: "Ctrl-groups UI (shows unit count per group); larger maps; anti-stuck AI movement." },
+  { v: "1.0", date: "2026-09-27", text: "Initial skirmish release." },
+];
+
+// ---------- reassignable hotkeys (#10) ----------
+// Single source of truth for remappable keys. Values are KeyboardEvent.code
+// (e.g. "KeyB"), so they are layout-independent. Persisted under MENU.S
+// settings; read live by input.js / ui.js.
+export const DEFAULT_KEYBINDS = {
+  tab_build: "KeyB",
+  tab_infantry: "KeyI",
+  tab_vehicles: "KeyV",
+  tab_research: "KeyR",
+  hide_bar: "KeyH",
+  repair: "KeyU",
+  speed1: "F1",
+  speed2: "F2",
+  speed3: "F3",
+};
+// Human-readable label + default for the settings UI, in display order.
+export const KEYBIND_DEFS = [
+  { key: "tab_build", label: "Buildings tab", def: "B" },
+  { key: "tab_infantry", label: "Infantry tab", def: "I" },
+  { key: "tab_vehicles", label: "Vehicles tab", def: "V" },
+  { key: "tab_research", label: "Research tab", def: "R" },
+  { key: "hide_bar", label: "Hide command bar", def: "H" },
+  { key: "repair", label: "Repair selection", def: "U" },
+  { key: "speed1", label: "Speed ×1", def: "F1" },
+  { key: "speed2", label: "Speed ×2", def: "F2" },
+  { key: "speed3", label: "Speed ×3", def: "F3" },
+];
+// Merge saved (partial) binds over the defaults so new keys always work.
+export function keyBinds(saved) {
+  const o = { ...DEFAULT_KEYBINDS };
+  const src = saved && typeof saved === "object" ? saved : loadSavedBinds();
+  if (src) {
+    for (const k of Object.keys(DEFAULT_KEYBINDS)) if (src[k]) o[k] = src[k];
+    const nested = src.keybinds;
+    if (nested && typeof nested === "object")
+      for (const k of Object.keys(DEFAULT_KEYBINDS)) if (nested[k]) o[k] = nested[k];
+  }
+  return o;
+}
+// Saved keybinds straight from the settings store (no menu module needed).
+let _lastSavedBinds = null, _lastSavedAt = 0;
+function loadSavedBinds() {
+  // Cache for ~30s so per-frame readers (input pan/WASD) don't hit storage
+  // constantly; rebinds save via saveSettings -> next read within 30s is fine.
+  if (_lastSavedBinds && Date.now() - _lastSavedAt < 30000) return _lastSavedBinds;
+  let j = null;
+  try { j = JSON.parse(localStorage.getItem("woe-settings") || "{}"); } catch { j = {}; }
+  _lastSavedBinds = j; _lastSavedAt = Date.now();
+  return j;
+}
+export function bumpBindsCache() { _lastSavedAt = 0; }
+// True if a keydown event matches the given action's current binding.
+export function keyMatches(bindObj, action, e) {
+  return e.code === bindObj[action] || e.key.toLowerCase() === String(bindObj[action]).toLowerCase();
+}
+// Pretty display name for a code ("KeyB" -> "B", "F1" -> "F1").
+export function bindLabel(code) {
+  return String(code).replace(/^Key/, "");
+}
+
 export const TUNE = {
   underpowerMult: 0.5,          // production speed when short on power
   sellRefund: 0.5,

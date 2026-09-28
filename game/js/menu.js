@@ -3,7 +3,8 @@
 // The game does NOT auto-start: bootMenu() shows the title and waits for the
 // player to press START BATTLE. MISSION stays disabled until campaign data ships.
 // Ground truth: config.js (MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE).
-import { MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE } from "./config.js";
+import { MAPS, FACTION_META, RES_TIERS, AI_DIFF, TUNE, VERSION, UPDATES,
+         KEYBIND_DEFS, bindLabel, keyBinds, keyMatches, bumpBindsCache } from "./config.js";
 import { generateMap, T } from "./rand.js";
 
 const STORE = "woe-settings";
@@ -19,12 +20,17 @@ export const MENU = {
     camX: null, camY: null,
   },
 };
+// Merged keybinds (defaults + saved) — exposed so input.js can read them live.
+export const KEYS = keyBinds({});
 
 let sfx = null;                 // set via setSfx() after the sound system is built
 let handlers = null;            // { onStart(sel), onQuit(), saveCam(x, y) }
 export function getHandlers() { return handlers; }
 let started = false;            // true once the player chose START BATTLE
-const beep = (f0, f1, d, type = "square", vol = 0.025) => sfx && sfx.beep(f0, f1, d, type, vol);
+const beep = (f0, f1, d, type = "square", vol = 0.025) =>
+  (sfx && sfx.beep ? sfx.beep(f0, f1, d, type, vol)
+    : (typeof window.setGameAudio === "function" && window.setGameAudio.beep) ? window.setGameAudio.beep(f0, f1, d, type, vol)
+    : undefined);
 
 function loadSettings() {
   try {
@@ -33,8 +39,11 @@ function loadSettings() {
     if (typeof MENU.S.camX !== "number") MENU.S.camX = null;
   } catch { /* first run */ }
 }
-function saveSettings() {
+export function saveSettings() {
   try { localStorage.setItem(STORE, JSON.stringify(MENU.S)); } catch { /* private mode */ }
+  bumpBindsCache();
+  const kb = (MENU.S.keybinds || {});
+  for (const k of Object.keys(KEYS)) if (kb[k]) KEYS[k] = kb[k];   // live-reload binds
 }
 
 function segRow(container, values, selected, cb) {
@@ -142,13 +151,16 @@ export function bootMenu(h) {
           <button class="menu-item" id="mi-mission" disabled title="Mission mode arrives with a campaign data pack — greyed out for now.">
             MISSION <span class="soon">SOON</span></button>
           <button class="menu-item" id="mi-settings">SETTINGS</button>
+          <button class="menu-item" id="mi-updates">UPDATES</button>
         </div>
-        <div class="title-foot">v1.0 · skirmish · in-game: F1–F3 speed · Esc menu · Enter restart</div>
+        <div class="title-foot">v${VERSION} · skirmish · in-game: F1–F3 speed · Esc menu · Enter restart</div>
       </div>
       <div class="menu-screen" id="ms-skirmish" hidden></div>
-      <div class="menu-screen" id="ms-settings" hidden></div>`;
+      <div class="menu-screen" id="ms-settings" hidden></div>
+      <div class="menu-screen" id="ms-updates" hidden></div>`;
     document.querySelector("#mi-skmish").addEventListener("click", () => { beep(340, 520, 0.04, "triangle"); show(1); });
     document.querySelector("#mi-settings").addEventListener("click", () => { beep(340, 520, 0.04, "triangle"); show(2); });
+    document.querySelector("#mi-updates").addEventListener("click", () => { beep(340, 520, 0.04, "triangle"); show(3); });
   }
   window.addEventListener("keydown", onMenuKey);
 }
@@ -158,23 +170,73 @@ function show(i) {
   scr("ms-title").hidden = i !== 0;
   if (i === 1) buildSkirmish();
   if (i === 2) buildSettings();
+  if (i === 3) buildUpdates();
   scr("ms-skirmish").hidden = i !== 1;
   scr("ms-settings").hidden = i !== 2;
+  scr("ms-updates").hidden = i !== 3;
   if (i === 1) { syncSummary(); markAiWarning(); }
   if (i === 2) refreshCamLabel();
   window.scrollTo(0, 0);
 }
 
+// ---------- UPDATES log screen (#7) ----------
+function buildUpdates() {
+  const el = document.getElementById("ms-updates");
+  el.innerHTML = `
+    <div class="menu-head">
+      <button class="menu-back" id="up-back">&larr; MAIN MENU</button>
+      <h2>UPDATES <span class="menu-hint">v${VERSION} · ${UPDATES[0].date}</span></h2>
+      <div class="menu-spacer"></div>
+    </div>
+    <div class="menu-box updates-log">
+      ${UPDATES.map((u) => `
+        <div class="update-entry${u.v === VERSION ? " current" : ""}">
+          <div class="update-head"><b>v${u.v}</b><span class="update-date">${u.date}</span></div>
+          <div class="update-text">${u.text}</div>
+        </div>`).join("")}
+    </div>`;
+  el.querySelector("#up-back").addEventListener("click", () => { beep(500, 320, 0.05, "triangle"); show(0); });
+}
+
 function onMenuKey(e) {
   if (started) return;
   if (e.key === "Escape" &&
-      (!document.getElementById("ms-skirmish").hidden || !document.getElementById("ms-settings").hidden)) {
+      (!document.getElementById("ms-skirmish").hidden || !document.getElementById("ms-settings").hidden ||
+       !document.getElementById("ms-updates").hidden)) {
     beep(500, 320, 0.05, "triangle");
     show(0);
   }
 }
 // while the title menu has not been started into a game, game hotkeys are gated
 export function menuUp() { return !started; }
+
+// main.js calls this once the sound system exists (or after settings edits)
+export function setSfx(ref) {
+  sfx = ref;
+  applySfx();
+}
+function applySfx() {
+  if (!sfx) return;
+  if (sfx.applySettings) sfx.applySettings(MENU.S);
+  else if (sfx.musicMuted !== undefined) sfx.musicMuted = MENU.S.musicMuted;
+}
+
+// main.js saves the camera when the game ends so SETTINGS can report it
+export function saveCam(x, y) {
+  MENU.S.camX = x;
+  MENU.S.camY = y;
+  saveSettings();
+  refreshCamLabel();
+}
+function refreshCamLabel() {
+  const el = document.getElementById("st-cam");
+  if (!el) return;
+  el.textContent = MENU.S.camX != null
+    ? `saved at tile (${Math.floor(MENU.S.camX / 32)}, ${Math.floor((MENU.S.camY || 0) / 32)})`
+    : "not yet saved";
+}
+
+export function isStarted() { return started; }
 
 // ================================================================
 function buildSkirmish() {
@@ -310,10 +372,16 @@ function buildSettings() {
       <div class="menu-box">
         <h3>AUDIO</h3>
         <div id="st-audio"></div>
+        <div class="menu-hint">applies live while a game is running</div>
       </div>
       <div class="menu-box">
         <h3>GAMEPLAY</h3>
         <div id="st-game"></div>
+      </div>
+      <div class="menu-box">
+        <h3>KEY BINDINGS <button class="menu-reset" id="kb-reset">RESET ALL</button></h3>
+        <div id="st-keys"></div>
+        <div class="menu-hint">click a key, then press the new one</div>
       </div>
       <div class="menu-box">
         <h3>LAST CAMERA</h3>
@@ -323,11 +391,10 @@ function buildSettings() {
     </div>
     <div class="menu-foot"><button class="menu-start" id="st-close">DONE</button></div>`;
 
-  toggleRow(document.getElementById("st-audio"), "Music", () => !MENU.S.musicMuted, (v) => {
-    MENU.S.musicMuted = !v; sfx && (sfx.musicMuted = MENU.S.musicMuted); saveSettings();
-  });
-  toggleRow(document.getElementById("st-audio"), "SFX volume", () => MENU.S.sfxVol > 0, (v) => {
-    MENU.S.sfxVol = v ? 1 : 0.25; applySfx(); saveSettings();
+  sliderRow(document.getElementById("st-audio"), "SFX volume", "sfxVol");
+  sliderRow(document.getElementById("st-audio"), "Music volume", "musicVol");
+  toggleRow(document.getElementById("st-audio"), "Music muted", () => MENU.S.musicMuted, (v) => {
+    MENU.S.musicMuted = v; applySfx(); saveSettings();
   });
 
   toggleRow(document.getElementById("st-game"), "Screen shake", () => MENU.S.shake, (v) => {
@@ -337,35 +404,84 @@ function buildSettings() {
     MENU.S.showGrid = v; saveSettings();
   });
 
+  buildKeybinds(document.getElementById("st-keys"));
+  document.getElementById("kb-reset").addEventListener("click", resetKeybinds);
+
   document.getElementById("st-back").addEventListener("click", () => { beep(500, 320, 0.05, "triangle"); show(0); });
   document.getElementById("st-close").addEventListener("click", () => { beep(500, 322, 0.05, "triangle"); show(0); });
   refreshCamLabel();
 }
 
-function refreshCamLabel() {
-  const el = document.getElementById("st-cam");
-  if (!el) return;
-  el.textContent = MENU.S.camX != null
-    ? `saved at tile (${Math.floor(MENU.S.camX / 32)}, ${Math.floor((MENU.S.camY || 0) / 32)})`
-    : "not yet saved";
+// 0–100 volume slider that applies live + persists (#6)
+function sliderRow(parent, label, key) {
+  const row = document.createElement("div");
+  row.className = "menu-row";
+  const lab = document.createElement("span");
+  lab.textContent = label;
+  row.appendChild(lab);
+  const s = document.createElement("input");
+  s.type = "range"; s.min = 0; s.max = 100; s.step = 5;
+  s.value = Math.round((MENU.S[key] ?? 1) * 100);
+  s.className = "menu-vol";
+  const val = document.createElement("span");
+  val.className = "menu-volv";
+  val.textContent = s.value + "%";
+  s.addEventListener("input", () => {
+    val.textContent = s.value + "%";
+    MENU.S[key] = Number(s.value) / 100;
+    applySfx();
+  });
+  s.addEventListener("change", () => saveSettings());
+  row.appendChild(s);
+  row.appendChild(val);
+  parent.appendChild(row);
 }
 
-// main.js calls this once the sound system exists (or after settings edits)
-export function setSfx(ref) {
-  sfx = ref;
-  applySfx();
+// ---------- reassignable hotkeys (#10) ----------
+function buildKeybinds(parent) {
+  parent.innerHTML = "";
+  MENU.S.keybinds = MENU.S.keybinds || {};
+  for (const def of KEYBIND_DEFS) {
+    const row = document.createElement("div");
+    row.className = "menu-row kb-row";
+    row.appendChild(el("span", "kb-label", def.label));
+    const cur = el("span", "kb-cur", KEYBIND_DEFS.indexOf(def) >= 0 ? "" : "");
+    cur.textContent = bindLabel(KEYS[def.key]);
+    row.appendChild(cur);
+    const btn = el("button", "menu-btn kb-btn", bindLabel(KEYS[def.key]));
+    btn.dataset.action = def.key;
+    btn.addEventListener("click", (e) => {
+      const b = e.currentTarget;
+      b.classList.add("listen");
+      b.textContent = "press…";
+      const onKey = (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        window.removeEventListener("keydown", onKey, true);
+        b.classList.remove("listen");
+        const code = ev.code === "Unidentified" ? "" : ev.code;
+        if (!code || code === "Escape") return;
+        KEYS[def.key] = code;
+        MENU.S.keybinds[def.key] = code;
+        b.textContent = bindLabel(code);
+        saveSettings();
+        beep(440, 660, 0.03, "sine", 0.02);
+      };
+      window.addEventListener("keydown", onKey, true);
+    });
+    row.appendChild(btn);
+    parent.appendChild(row);
+  }
 }
-function applySfx() {
-  if (!sfx) return;
-  if (sfx.applySettings) sfx.applySettings(MENU.S);
-}
-
-// main.js saves the camera when the game ends so SETTINGS can report it
-export function saveCam(x, y) {
-  MENU.S.camX = x;
-  MENU.S.camY = y;
+function resetKeybinds() {
+  MENU.S.keybinds = {};
+  for (const k of Object.keys(KEYS)) KEYS[k] = keyBinds({})[k];
+  buildKeybinds(document.getElementById("st-keys"));
   saveSettings();
-  refreshCamLabel();
+  beep(500, 320, 0.05, "triangle");
 }
-
-export function isStarted() { return started; }
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  n.className = cls;
+  if (text) n.textContent = text;
+  return n;
+}

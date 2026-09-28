@@ -13,7 +13,7 @@
 //   selection  : game.units[].selected / game.buildings[].selected
 //   camera     : r.cam {x,y,zoom}, canvas css size -> minimap viewport
 /* global document, window */
-import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META } from "./config.js";
+import { TILE, MAP_W, MAP_H, UNITS, BUILDINGS, UPGRADES, FACTION_META, keyBinds, bindLabel } from "./config.js";
 import { T } from "./rand.js";
 import { unitSpriteKey, bSpriteKey, SPRITES } from "./sprites.js";
 
@@ -66,6 +66,10 @@ export class UI {
             <b>Pause:</b> Space / Esc (no ghost) / F10 / F12 · <b>Hide command bar:</b> H (or the tab handle)<br>
             <b>Speed:</b> F1 / F2 / F3 · <b>Repair:</b> U on selected building · <b>Groups:</b> CTR+1..5 · <b>Pan:</b> WASD / edge / MMB
           </div>
+          <div id="pauseVol" style="display:flex;flex-direction:column;gap:8px;margin:10px 0 4px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="min-width:84px;font-size:11px;letter-spacing:1px">SFX VOLUME</span><input id="pauseSfxVol" type="range" min="0" max="100" style="flex:1;accent-color:#c8a06a"><span id="pauseSfxVal" style="min-width:34px;text-align:right;font-size:11px">100%</span></div>
+            <div style="display:flex;align-items:center;gap:8px"><span style="min-width:84px;font-size:11px;letter-spacing:1px">MUSIC VOLUME</span><input id="pauseMusVol" type="range" min="0" max="100" style="flex:1;accent-color:#c8a06a"><span id="pauseMusVal" style="min-width:34px;text-align:right;font-size:11px">50%</span></div>
+          </div>
           <button class="overbtn" id="pauseResume">RESUME — ESC</button>
         </div>
       </div>`;
@@ -100,6 +104,20 @@ export class UI {
   }
 
   // ---- tabs -------------------------------------------------------------
+  // Normalize a binding to a set of comparable tokens: code form, key form
+  // lowercased, and label form lowercased (so "KeyB" matches e.key "b" and
+  // e.code "KeyB"; "h" matches "h"; "F1" matches "F1").
+  static bindTokens(bind, fallback) {
+    const v = bind || fallback;
+    const toks = new Set([String(v).toLowerCase(), String(v).replace(/^Key/, "").toLowerCase()]);
+    return toks;
+  }
+  // tab id -> current keybind; live-reloads from MENU. NOTE keys are singular
+  // in config (tab_build / tab_infantry / tab_vehicles / tab_research).
+  tabBind(id) {
+    const map = { "BUILDINGS": "tab_build", "INFANTRY": "tab_infantry", "VEHICLES": "tab_vehicles", "RESEARCH": "tab_research" };
+    return keyBinds()[map[id]] || { BUILDINGS: "b", INFANTRY: "i", VEHICLES: "v", RESEARCH: "r" }[id];
+  }
   buildTabs() {
     const tabs = [
       ["BUILDINGS", "B", "Building Production"],
@@ -109,7 +127,7 @@ export class UI {
     ];
     const el = this.root.querySelector("#cmdTabs");
     el.innerHTML = tabs.map(([id, k, tip]) =>
-      `<div class="cmd-tab" data-tab="${id}" title="${tip}"><span class="ct-label">${id}</span><kbd>${k}</kbd></div>`
+      `<div class="cmd-tab" data-tab="${id}" title="${tip}"><span class="ct-label">${id}</span><kbd>${bindLabel(this.tabBind(id))}</kbd></div>`
     ).join("");
     el.addEventListener("click", (e) => {
       const t = e.target.closest(".cmd-tab");
@@ -117,16 +135,22 @@ export class UI {
       this.tab = t.dataset.tab;
       this.beep("click"); this.refresh();
     });
-    // hotkeys B/I/V/R
+    // hotkeys B/I/V/R (reassignable via settings — read live)
     window.addEventListener("keydown", (e) => {
       if (this.g && !this.g.winner && !e.ctrlKey && !e.altKey && !e.metaKey && document.activeElement.tagName !== "INPUT") {
-        const map = { b: "BUILDINGS", i: "INFANTRY", v: "VEHICLES", r: "RESEARCH" };
-        const k = e.key.toLowerCase();
-        if (k === "h") { this.toggleBar(); return; }
-        if (map[k] && map[k] !== this.tab) {
-          // tab hotkey while the panel is hidden → reveal it, then switch tab
-          if (this.root.querySelector("#command").classList.contains("hidden")) this.toggleBar();
-          this.tab = map[k]; this.beep("click"); this.refresh();
+        const k = String(e.key).toLowerCase();
+        const code = e.code || "";
+        const binds = keyBinds();
+        if (UI.bindTokens(binds.hide_bar, "h").has(k) || code === binds.hide_bar) { this.toggleBar(); return; }
+        for (const id of ["BUILDINGS", "INFANTRY", "VEHICLES", "RESEARCH"]) {
+          if (id === this.tab) continue;
+          const toks = UI.bindTokens(this.tabBind(id), "");
+          if (toks.has(k) || code === this.tabBind(id)) {
+            // tab hotkey while the panel is hidden → reveal it, then switch tab
+            if (this.root.querySelector("#command").classList.contains("hidden")) this.toggleBar();
+            this.tab = id; this.beep("click"); this.refresh();
+            break;
+          }
         }
       }
     });
@@ -136,7 +160,20 @@ export class UI {
     body.addEventListener("click", (e) => {
       const it = e.target.closest(".card");
       if (!it) return;
-      this.onCard(it.dataset.kind, it.dataset.id);
+      if (this._suppressNextCardClick) { this._suppressNextCardClick = false; return; }
+      this.onCard(it.dataset.kind, it.dataset.id, 1);
+    });
+    // #1: hold CTRL or SHIFT while clicking a UNIT card to queue +5 at once.
+    // We read the modifiers on mousedown (Windows drops the key before click),
+    // then suppress the single click so the card isn't double-counted.
+    body.addEventListener("mousedown", (e) => {
+      if (!e.button) return;
+      const it = e.target.closest(".card");
+      if (!it || it.dataset.kind !== "unit") return;
+      if (e.ctrlKey || e.shiftKey) {
+        this.onCard(it.dataset.kind, it.dataset.id, 5);
+        this._suppressNextCardClick = true;
+      }
     });
     // Bug 3: panel hide/show tab handle (H key is handled in buildTabs)
     const tg = this.root.querySelector("#cmdToggle");
@@ -167,6 +204,37 @@ export class UI {
     // pause overlay: resume button (Esc also works)
     const pr = this.root.querySelector("#pauseResume");
     if (pr) pr.addEventListener("click", () => { if (this.in) this.in.togglePause(); });
+    // pause overlay: live volume sliders (#6 — settings during the game)
+    this.bindPauseVol();
+  }
+  // SFX / Music sliders on the pause screen. Applies live via
+  // window.setGameAudio and persists to the same localStorage store the
+  // SETTINGS page uses (#6 — settings during the game).
+  bindPauseVol() {
+    const sv = this.root.querySelector("#pauseSfxVol"), svv = this.root.querySelector("#pauseSfxVal");
+    const mv = this.root.querySelector("#pauseMusVol"), mvv = this.root.querySelector("#pauseMusVal");
+    if (!sv || !mv) return;
+    const STORE = "woe-settings";
+    const load = () => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; } };
+    const save = (k, el) => {
+      try {
+        const s = load(); s[k] = Number(el.value) / 100;
+        localStorage.setItem(STORE, JSON.stringify(s));
+      } catch { /* private mode */ }
+    };
+    const apply = (k, el) => {
+      const o = {}; o[k] = Number(el.value) / 100;
+      if (window.setGameAudio) window.setGameAudio(o);
+      save(k, el);
+      svv.textContent = sv.value + "%"; mvv.textContent = mv.value + "%";
+    };
+    const s = load();
+    sv.value = Math.round((s.sfxVol ?? 1) * 100);
+    mv.value = Math.round((s.musicVol ?? 1) * 100);
+    if (s.musicMuted) mv.value = 0;
+    svv.textContent = sv.value + "%"; mvv.textContent = mv.value + "%";
+    sv.addEventListener("input", () => apply("sfxVol", sv));
+    mv.addEventListener("input", () => apply("musicVol", mv));
   }
   doSell() {
     const g = this.g;
@@ -182,19 +250,32 @@ export class UI {
     const su = g.units.filter((u) => u.selected && !u.dead && u.isAlive() && u.fac === g.player);
     const sb = g.buildings.filter((b) => b.selected && !b.dead && b.isAlive() && b.fac === g.player);
     const targets = [...sb, ...su];
-    if (!targets.length) { this.beep("error"); return; }
-    let done = false;
-    for (const t of targets) { if (g.repairB(t)) done = true; }
-    this.beep(done ? "repair" : "error");
+    // #5: REPAIR is a TOGGLE. Clicking starts continuous auto-repair (heals
+    // every frame until full or out of tin); clicking again stops it. Only
+    // toggle entities that can still use the mode (alive, not already full).
+    const repairables = targets.filter((t) => t.isAlive() && t.hp < t.maxHp);
+    if (!repairables.length) {
+      if (!targets.length) { this.beep("error"); return; }
+      // selection is full HP or just topped up: one-shot nothing, stop the mode
+      for (const t of targets) t._repairing = false;
+      this.beep("stop");
+      this.refreshSel();
+      return;
+    }
+    // any repairable already in repair mode? -> stop all (toggle off)
+    const anyOn = repairables.some((t) => t._repairing);
+    for (const t of repairables) t._repairing = !anyOn;
+    for (const t of targets) if (!t.isAlive() || t.hp >= t.maxHp) t._repairing = false;
+    this.beep(anyOn ? "stop" : "repair");
     this.refreshSel();
   }
-  onCard(kind, id) {
+  onCard(kind, id, count = 1) {
     const g = this.g;
     if (g.winner) return;
     if (kind === "building") {
       this.onBuild(id);
     } else if (kind === "unit") {
-      this.onQueueUnit(id);
+      this.onQueueUnit(id, count);
     } else if (kind === "research") {
       if (g.research(g.player, id)) this.beep("research");
       else this.beep("error");
@@ -228,7 +309,7 @@ export class UI {
     this.beep("click");
     this.refresh();
   }
-  onQueueUnit(id) {
+  onQueueUnit(id, count = 1) {
     const g = this.g, u = UNITS[id];
     if (!u) return;
     const fac = g.player;
@@ -237,8 +318,17 @@ export class UI {
     if (!f.res.tin || g.fac[fac].res.tin < (u.cost.tin || 0)) { this.beep("error"); return; }
     const fab = this.anyFactoryFor(CLASS_PROD[u.class]);
     if (!fab) { this.beep("error"); setStatus("Need a completed factory (" + (CLASS_PROD[u.class]) + ").", 2.5); return; }
-    if (g.queueUnit(fab, id)) this.beep("spawn");
-    else this.beep("error");
+    // #1: multi-queue — up to `count` (5 for Ctrl/Shift). Each queueUnit call
+    // re-checks affordability, factory slots and the global unit cap, so the
+    // queue stops naturally the moment any of those run out. Re-picking a
+    // factory each pass spreads the queue across whichever has room.
+    let added = 0;
+    for (let i = 0; i < count; i++) {
+      const fab2 = this.anyFactoryFor(CLASS_PROD[u.class]) || fab;
+      if (!g.queueUnit(fab2, id)) break;
+      added++;
+    }
+    this.beep(added ? "spawn" : "error");
   }
   popQueue() {
     const g = this.g;
@@ -388,21 +478,26 @@ export class UI {
       const c = su[0].cfg;
       const hp = Math.round(su.reduce((a, u) => a + u.hp, 0) / su.length);
       const hurt = su.some((u) => u.hp < u.maxHp);
+      const repOn = su.some((u) => u._repairing);
+      const repBtn = (hurt || repOn)
+        ? `<button class="selbtn" data-repair>${repOn ? "⏹ STOP AUTO-REPAIR" : "🔧 AUTO-REPAIR (10 tin/s)"}</button>` : "";
       h = `<div class="selhead"><span>${c.name}${su.length > 1 ? " ×" + su.length : ""}</span><span class="tag">${c.class}</span></div>
-          <div class="selrow">avg hp ${hp}/${c.hp}</div>
+          <div class="selrow">avg hp ${hp}/${c.hp}${repOn ? " · 🔧 repairing" : ""}</div>
           <div class="selrow dim">dmg ${c.dmg} · range ${Math.round(c.range)} · sp ${c.speed}</div>
-          ${hurt ? `<button class="selbtn" data-repair>🔧 REPAIR (10 tin)</button>` : ""}
-          <div class="selhint">RMB move · RMB+enemy attack · CTR+1..5 group · U repair</div>`;
+          ${repBtn}
+          <div class="selhint">RMB move · RMB+enemy attack · CTR+1..5 group · U auto-repair</div>`;
     } else if (sb.length) {
       const b = sb[0], q = b.queue || [];
       const refund = Math.round((b.cfg.cost.tin || 0) * 0.5 * 0.5);
+      const repBtn = (b.hp < b.maxHp || b._repairing)
+        ? `<button class="selbtn" data-repair>${b._repairing ? "⏹ STOP AUTO-REPAIR" : "🔧 AUTO-REPAIR (10 tin/s)"}</button>` : "";
       h = `<div class="selhead"><span>${b.cfg.name}</span><span class="tag">${b.cfg.produces || "building"}</span></div>
-          <div class="selrow">hp ${Math.round(b.hp)}/${b.maxHp}${b.underConstruction() ? " · under construction" : ""}${b.underpowered ? " · ⚠ NO POWER" : ""}</div>
+          <div class="selrow">hp ${Math.round(b.hp)}/${b.maxHp}${b.underConstruction() ? " · under construction" : ""}${b.underpowered ? " · ⚠ NO POWER" : ""}${b._repairing ? " · 🔧 repairing" : ""}</div>
           ${b.cfg.slots ? `<div class="selrow">queue ${q.length}/${b.cfg.slots}${q.length ? " · " + q.map((x) => UNITS[x]?.name || x).join(", ") : " · empty"}</div>
           <button class="selbtn" data-queue>✕ POP QUEUE</button>` : ""}
-          ${b.hp < b.maxHp ? `<button class="selbtn" data-repair>🔧 REPAIR (10 tin)</button>` : ""}
+          ${repBtn}
           <button class="selbtn" data-sell>💰 SELL +${refund} tin</button>
-          <div class="selhint">U repair · SELL button below</div>`;
+          <div class="selhint">U auto-repair (toggles on/off) · SELL button below</div>`;
     } else {
       h = `<div class="selhint">Left drag = select · RMB = move/attack<br>Cmd bar: <b>B</b>uildings <b>I</b>nfantry <b>V</b>ehicles <b>R</b>esearch · <b>H</b>ide bar<br>Space = pause · Esc = cancel build / pause</div>`;
     }
@@ -447,7 +542,7 @@ export class UI {
 
   // legacy compat (input.js / main.js may call)
   selectInfo() {} 
-  beep(t) { try { if (this._sfx) this._sfx(t); } catch (e) { /* audio must never break UI input */ } }
+  beep(t) { try { if (this._sfx) (typeof this._sfx === "function" ? this._sfx : this._sfx.play)(t); } catch (e) { /* audio must never break UI input */ } }
 }
 
 export function fmtTime(t) {

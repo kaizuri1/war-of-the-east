@@ -8,11 +8,19 @@ import { Input } from "./input.js";
 import { UI } from "./ui.js";
 import { AI } from "./ai.js";
 import { buildTiles, buildSprites, loadArtOverrides, TILES } from "./sprites.js";
-import { bootMenu } from "./menu.js";
+import { bootMenu, setSfx, MENU } from "./menu.js";
 
 let game, renderer, input, ui, ai, canvas, sfx;
 // Dev debug hooks — set the instant modules load, before any await.
 window.__dbg = { game: () => game, renderer: () => renderer, tiles: () => TILES };
+// #6: in-game pause menu wants to tweak volume. We pass the sfx object
+// into the UI through game.attach({ sfx }), so a simple helper here just
+// forwards to the right gain without needing to touch engine or ui.
+function setGameAudio({ sfxVol, musicVol, musicMuted } = {}) {
+  if (sfxVol != null && sfx?._setVol) sfx._setVol(sfxVol);
+  if (musicVol != null || musicMuted != null) sfx?._setMusic(musicVol, musicMuted);
+}
+window.setGameAudio = setGameAudio;
 
 async function boot() {
   await loadArtOverrides(); // drop-in PNG art if present; silent no-op otherwise
@@ -22,16 +30,26 @@ async function boot() {
   renderer = new Renderer(canvas);
   renderer.resize();
   sfx = makeSfx();
-  sfx.applySettings = applySettings;   // hooks up menu SETTINGS sliders
+  setSfx(sfx);                  // menu.js beep / volume sliders (live)
+  // Apply the persisted settings the moment the audio graph builds, then
+  // hand `applySettings` back to menu.js when it flips a toggle.
+  if (sfx) {
+    sfx.musicMuted = !!MENU.S.musicMuted;
+    sfx._setVol(MENU.S.sfxVol);
+    sfx._setMusic(MENU.S.musicVol, MENU.S.musicMuted);
+    sfx.applySettings = applySettings;
+  }
   bootMenu({ onPlay: playGame });
   window.__woetBooted = true; // clears the file:// watchdog in index.html
 }
 
 function applySettings(s) {
-  // s = { sfxVol, musicVol, musicMuted, shake } — applied live.
-  if (s && !sfx) return;
-  if (sfx._setVol) sfx._setVol(s.sfxVol);
-  if (s.fx.shake !== undefined) window.WOE_SHAKE = s.fx.shake !== "off";
+  // s = { sfxVol, musicVol, musicMuted, shake } — applied live from menu.js.
+  if (!s || !sfx) return;
+  if (s.sfxVol != null) sfx._setVol(s.sfxVol);
+  if (s.musicVol != null || s.musicMuted !== undefined)
+    sfx._setMusic(s.musicVol, s.musicMuted);
+  if (s.shake !== undefined) window.WOE_SHAKE = s.shake === true;
 }
 
 // Build a full match from the skirmish setup chosen in the menu, then hand
@@ -86,19 +104,23 @@ function playGame(cfg) {
 // Richer WebAudio SFX: layered oscillators + noise bursts + low drum,
 // tuned per event. No audio assets.
 function makeSfx() {
-  let ctx = null, master = null, noiseBuf = null;
+  let ctx = null, sfxGain = null, musicGain = null, noiseBuf = null;
   const ensure = () => {
     if (!ctx) {
       try {
         ctx = new (window.AudioContext || window.webkitAudioContext)();
-        master = ctx.createGain();
-        master.gain.value = 0.9;
-        // simple feedback delay for a bit of space
+        // Two master buses: SFX and music, each with its own gain so the
+        // in-game pause menu and menu settings can mute/duck them separately.
+        sfxGain = ctx.createGain();  sfxGain.gain.value = MENU_S.sfxVol;
+        musicGain = ctx.createGain(); musicGain.gain.value = MENU_S.musicVol;
+        if (MENU_S.musicMuted) musicGain.gain.value = 0;
+        sfxGain.connect(ctx.destination);
+        musicGain.connect(ctx.destination);
+        // simple feedback delay for a bit of space (SFX only)
         const dl = ctx.createDelay(0.5); dl.delayTime.value = 0.11;
         const fb = ctx.createGain(); fb.gain.value = 0.18;
         const dlp = ctx.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 2400;
-        master.connect(ctx.destination);
-        master.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(ctx.destination);
+        sfxGain.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(ctx.destination);
         // pre-baked 1s white noise
         noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
         const d = noiseBuf.getChannelData(0);
@@ -115,7 +137,7 @@ function makeSfx() {
     o.type = type; o.frequency.setValueAtTime(f0, t);
     if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + a + d);
     env(g, t, a, d); g.gain.setValueAtTime(0.0001, t + a + d + 0.0001);
-    g.connect(master); o.connect(g); o.start(t); o.stop(t + a + d + 0.05);
+    g.connect(sfxGain); o.connect(g); o.start(t); o.stop(t + a + d + 0.05);
   };
   const noise = (f, a, d, vol, type = "bandpass", t0 = 0) => {
     const c = ensure(); if (!c) return;
@@ -123,9 +145,9 @@ function makeSfx() {
     const flt = c.createBiquadFilter(); flt.type = type; flt.frequency.value = f;
     const g = c.createGain(); env(g, t, a, d); g.gain.setValueAtTime(0.001, t);
     g.gain.setValueAtTime(vol, t + a);
-    s.connect(flt); flt.connect(g); g.connect(master); s.start(t); s.stop(t + a + d + 0.05);
+    s.connect(flt); flt.connect(g); g.connect(sfxGain); s.start(t); s.stop(t + a + d + 0.05);
   };
-  return (name) => {
+  const play = (name) => {
     const t = ensure(); if (!t) return;
     switch (name) {
       case "shot":      // soft muzzle crack: filtered noise + low thump
@@ -155,6 +177,40 @@ function makeSfx() {
       default: osc("sine", 500, 400, 0.003, 0.05, 0.2);
     }
   };
+  // --- Live volume controls (#6 in-game settings) ---------------------------
+  // menu.js calls applySettings on the sfx object; it reads MENU.S on demand
+  // so we don't have to re-wire anything after a settings change.
+  let musicStarted = false;
+  const _setVol = (v) => { const c = ensure(); if (c && sfxGain) sfxGain.gain.value = v; };
+  const _setMusic = (v, muted) => {
+    const c = ensure(); if (!c || !musicGain) return;
+    musicGain.gain.value = muted ? 0 : (v ?? 0);
+    if (!muted && !musicStarted) { musicStarted = true; startMusicLoop(); }
+  };
+  // A very light procedural "field drone" (two detuned low sines + slow
+  // LFO on the gain) so the in-game settings have something audibly real
+  // to modulate. Kept at low volume; can be fully silenced via mute.
+  const startMusicLoop = () => {
+    const c = ctx; if (!c) return;
+    const g = c.createGain(); g.gain.value = 0.18; g.connect(musicGain);
+    const f0 = 92, f1 = 92 * 1.007, f2 = 184;   // A2 + slight detune + A3
+    for (const f of [f0, f1, f2]) {
+      const o = c.createOscillator(); o.type = "sine"; o.frequency.value = f;
+      const og = c.createGain(); og.gain.value = f === f2 ? 0.12 : 0.5;
+      o.connect(og); og.connect(g); o.start();
+    }
+    const lfo = c.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.08;
+    const lg = c.createGain(); lg.gain.value = 0.08;
+    lfo.connect(lg); lg.connect(g.gain); lfo.start();
+  };
+  // Generic menu beep (short two-tone). Used by menu.js buttons.
+  const beep = (f0, f1, d = 0.04, type = "square", vol = 0.025) => {
+    const c = ensure(); if (!c) return;
+    osc(type, f0, f1, 0.003, d, vol);
+  };
+  // The sfx object is handed around as this shape (main.js → game.attach
+  // → engine.sound(name) → ui.beep(name) AND menu.js's beep helper).
+  return { play, beep, _setVol, _setMusic, musicMuted: false };
 }
 
 let last = 0;

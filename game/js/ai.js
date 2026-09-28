@@ -54,8 +54,17 @@ export class AI {
     }
     this.research();
     this.economy();
+    this.selfRepair();
     this.production();
     this.offense();
+  }
+
+  // #5: keep own base topped up — mark damaged buildings so the engine's
+  // repairContinuous() heals them each frame until full or out of tin.
+  selfRepair() {
+    for (const b of this.myBuildings()) {
+      if (b.hp < b.maxHp) b._repairing = true;
+    }
   }
 
   myBuildings() {

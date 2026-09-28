@@ -2,7 +2,7 @@
 // Mouse: LMB select/box, RMB move / attack-move / place building, MMB pan, wheel zoom.
 // Keys: WASD/edge-pan, Space pause, Esc cancel build, Ctrl/Shift+1..5 control groups.
 // Coordinates are CSS pixels relative to the canvas; renderer does dpr/zoom transform.
-import { TILE, BUILDINGS } from "./config.js";
+import { TILE, BUILDINGS, keyBinds } from "./config.js";
 import { menuUp } from "./menu.js";
 
 export class Input {
@@ -157,6 +157,8 @@ export class Input {
     let anyUnit = false;
     for (const un of g.units) {
       if (un.dead || !un.isAlive()) continue;
+      // box-select grabs ONLY your own units — enemy units ignore the box
+      if (un.fac !== g.player) continue;
       if (un.x > minx && un.x < maxx && un.y > miny && un.y < maxy) { un.selected = true; anyUnit = true; }
       else if (!add) un.selected = false;
     }
@@ -259,10 +261,14 @@ export class Input {
       }
       // F10 / F12 = pause-menu screen (always available, not gated by build mode)
       if (e.code === "F10" || e.code === "F12") { this.togglePause(); e.preventDefault(); return; }
-      if (k === "w" || k === "arrowup") this.edges.t = true;
-      else if (k === "s" || k === "arrowdown") this.edges.b = true;
-      else if (k === "a" || k === "arrowleft") this.edges.l = true;
-      else if (k === "d" || k === "arrowright") this.edges.r = true;
+      // WASD edge-pan — WASD keys are reassignable (settings → keybinds);
+      // arrow keys always work as a fallback.
+      const b = keyBinds();
+      const up    = (i) => k === (b["cam_" + i] || i).toLowerCase() || k === `arrow${i}` || e.code === "Arrow" + i[0].toUpperCase() + i.slice(1);
+      if (up("up")) this.edges.t = true;
+      else if (up("down")) this.edges.b = true;
+      else if (up("left")) this.edges.l = true;
+      else if (up("right")) this.edges.r = true;
       // Esc: context-sensitive. If a build ghost is up → cancel it (restore
       // the normal cursor). Otherwise → open the pause screen.
       else if (k === "escape") {
@@ -270,10 +276,12 @@ export class Input {
         else this.togglePause();
       }
     } else {
-      if (k === "w" || k === "arrowup" || e.code === "ArrowUp") this.edges.t = false;
-      else if (k === "s" || k === "arrowdown" || e.code === "ArrowDown") this.edges.b = false;
-      else if (k === "a" || k === "arrowleft" || e.code === "ArrowLeft") this.edges.l = false;
-      else if (k === "d" || k === "arrowright" || e.code === "ArrowRight") this.edges.r = false;
+      const b = keyBinds();
+      const up = (i) => k === (b["cam_" + i] || i).toLowerCase() || k === `arrow${i}` || e.code === "Arrow" + i[0].toUpperCase() + i.slice(1);
+      if (up("up")) this.edges.t = false;
+      else if (up("down")) this.edges.b = false;
+      else if (up("left")) this.edges.l = false;
+      else if (up("right")) this.edges.r = false;
     }
     void was;
   }
