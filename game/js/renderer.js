@@ -54,8 +54,12 @@ export class Renderer {
         this.drawTile(game, tx, ty);
     // build ghost
     if (this.buildGhost) this.drawGhost(game);
-    // selection rings under units
-    for (const e of game.units) if (e.selected) this.ring(e, "#ffe873");
+    // selection: yellow = confirmed selection; bright green = being
+    // selected RIGHT NOW (live rubber band + units inside it, C&C-style)
+    for (const e of game.units) {
+      if (this.dragSel && this.inDragSel(e.x, e.y)) this.ring(e, "#46ff7a", true);
+      else if (e.selected) this.ring(e, "#ffe873");
+    }
     for (const b of game.buildings) if (!b.dead && b.selected) this.bRing(b, "#ffe873");
     // buildings
     for (const b of game.buildings) if (!b.dead) this.drawBuilding(game, b);
@@ -63,11 +67,12 @@ export class Renderer {
     for (const u of game.units) if (!u.dead) { this.drawTrail(u); this.drawUnit(game, u); }
     // projectiles on top
     for (const p of game.projectiles) this.drawProjectile(p);
-    // rubber-band selection box (screen space)
+    // rubber-band selection box (screen space) — bright green = "being
+    // selected" preview (C&C-style); confirmed selections stay yellow rings
     if (this.dragSel) {
       g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      g.strokeStyle = "#ffe873"; g.lineWidth = 1;
-      g.fillStyle = "rgba(255,232,115,0.12)";
+      g.strokeStyle = "#46ff7a"; g.lineWidth = 1.5;
+      g.fillStyle = "rgba(70,255,122,0.12)";
       const s = this.dragSel;
       g.fillRect(s.x, s.y, s.w, s.h);
       g.strokeRect(s.x + 0.5, s.y + 0.5, s.w, s.h);
@@ -222,10 +227,20 @@ export class Renderer {
     g.fillStyle = "#fff2c0";
     g.beginPath(); g.arc(p.x, p.y, 1.6, 0, 6.29); g.fill();
   }
-  ring(e, col) {
+  // inDragSel: is this world point inside the live rubber-band box? The box is
+  // stored in CSS px on input; convert to world via the current camera.
+  inDragSel(wx, wy) {
+    const s = this.dragSel;
+    if (!s || (!s.w && !s.h)) return false;
+    const c = this.cam;
+    const x0 = s.x / c.zoom + c.x, y0 = s.y / c.zoom + c.y;
+    return wx > x0 && wx < x0 + s.w / c.zoom && wy > y0 && wy < y0 + s.h / c.zoom;
+  }
+  ring(e, col, hot) {
     const g = this.g;
-    g.strokeStyle = col; g.lineWidth = 1.4;
-    g.beginPath(); g.arc(e.x, e.y, e.footprint() + 3 + Math.sin(e.anim) * 0.001, 0, 6.29); g.stroke();
+    if (hot) { g.fillStyle = "rgba(70,255,122,0.15)"; g.beginPath(); g.arc(e.x, e.y, e.footprint() + 3, 0, 6.29); g.fill(); }
+    g.strokeStyle = col; g.lineWidth = hot ? 1.8 : 1.4;
+    g.beginPath(); g.arc(e.x, e.y, e.footprint() + 3, 0, 6.29); g.stroke();
   }
   bRing(b, col) {
     const g = this.g;

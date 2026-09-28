@@ -12,7 +12,7 @@ import { bootMenu, setSfx, MENU } from "./menu.js";
 
 let game, renderer, input, ui, ai, canvas, sfx;
 // Dev debug hooks — set the instant modules load, before any await.
-window.__dbg = { game: () => game, renderer: () => renderer, tiles: () => TILES };
+window.__dbg = { game: () => game, renderer: () => renderer, input: () => input, tiles: () => TILES };
 // #6: in-game pause menu wants to tweak volume. We pass the sfx object
 // into the UI through game.attach({ sfx }), so a simple helper here just
 // forwards to the right gain without needing to touch engine or ui.
@@ -234,7 +234,10 @@ function frame(ts) {
   // Guard them so the frame is ALWAYS rescheduled no matter what.
   try {
     if (game && game.onUiTick) game.onUiTick(dt);
-    if (renderer && game) renderer.draw(game);
+    if (renderer && game) {
+      renderer.dragSel = input ? input.dragSel : null;   // sync live box-select rect
+      renderer.draw(game);
+    }
   } catch (e) {
     if (!e.__warned) { console.error("[render]", e); e.__warned = true; }
   }
