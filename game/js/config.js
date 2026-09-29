@@ -46,8 +46,9 @@ export const FACS = ["china", "japan"];
 // Bump the minor for every shipped update. The UPDATES list is newest-first and
 // is shown in the main menu (UPDATES button). Keep the newest entry in sync
 // with VERSION.
-export const VERSION = "1.8";
+export const VERSION = "1.9";
 export const UPDATES = [
+  { v: "1.9", date: "2026-09-28", text: "Skirmish menu: era-correct faction flags (ROC China ⭐ / Rising Sun Japan); selectable spawn corner (SW/NE — enemy takes the opposite); 7 team color palettes re-bake both sides' sprites; pause screen QUIT TO MENU (button + Q hotkey)." },
   { v: "1.8", date: "2026-09-28", text: "Smooth tank-turret swivel; continuous building repair; in-game volume sliders (pause menu); reassignable hotkeys; Ctrl/Shift +×5 unit queue; unit count in the update log." },
   { v: "1.7", date: "2026-09-28", text: "Box-select only picks your own units; distinct AT/AA/infantry sprites; AI builds a mixed force and attacks in waves." },
   { v: "1.6", date: "2026-09-28", text: "Multi-click production queue; auto-attack for all units; fixed A/D scroll + arrow keys; relocated spawn off the map corner." },
