@@ -232,19 +232,26 @@ function mixColor(hex, amt) {
 // ---- era-appropriate national flags (WW2 / 1937-1945) ----
 function factionFlagSVG(id) {
   if (id === "china") {
-    // 1928 Republic of China: red field, five-pointed star in the canton +
-    // four stars toward the fly edge (the wartime ROC / Republic flag).
-    const star = (cx, cy, r) => {
+    // Republic of China national flag (1928–1949): red field, five-pointed
+    // star in the canton + four small stars in a vertical row on the fly,
+    // each rotated so one point faces the big star's center (official spec).
+    const star = (cx, cy, r, rot) => {
       let d = "";
       for (let i = 0; i < 5; i++) {
-        const a = (Math.PI / 2) * -1 + i * (2 * Math.PI / 5);
+        const a = rot - Math.PI / 2 + i * (2 * Math.PI / 5);
         const a2 = a + Math.PI / 5;
         d += (i ? "L" : "M") + (cx + Math.cos(a) * r).toFixed(2) + " " + (cy + Math.sin(a) * r).toFixed(2) +
              "L" + (cx + Math.cos(a2) * r * 0.42).toFixed(2) + " " + (cy + Math.sin(a2) * r * 0.42).toFixed(2);
       }
       return `<path fill="#ffde00" d="${d}Z"/>`;
     };
-    return `<svg viewBox="0 0 32 24" class="flag" aria-hidden="true"><rect width="32" height="24" fill="#de2910"/>${star(6.5, 7.5, 5.4)}${star(15, 3.2, 1.9)}${star(17.4, 6.6, 1.9)}${star(17.4, 10.6, 1.9)}${star(15, 14, 1.9)}</svg>`;
+    const bx = 8, by = 6, sx = (2 * 32) / 3, sr = 1.9;
+    let small = "";
+    for (let i = 0; i < 4; i++) {
+      const y = 3 + i * 3;                    // vertical row, h/8 spacing
+      small += star(sx, y, sr, Math.atan2(by - y, bx - sx) + Math.PI / 2);
+    }
+    return `<svg viewBox="0 0 32 24" class="flag" aria-hidden="true"><rect width="32" height="24" fill="#de2910"/>${star(bx, by, 5.4, 0)}${small}</svg>`;
   }
   if (id === "japan") {
     // 1905 Empire of Japan "Rising Sun" war flag: red disc + 16 rays.
